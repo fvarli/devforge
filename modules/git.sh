@@ -10,7 +10,10 @@ ensure_git_prerequisites() {
     local package_name
 
     for package_name in "${prerequisites[@]}"; do
-        install_apt_package "$package_name"
+        if ! install_apt_package "$package_name"; then
+            log_error "Required prerequisite installation failed: $package_name"
+            return 1
+        fi
     done
 }
 
@@ -33,33 +36,45 @@ install_gh_cli() {
     if [[ ! -f "$keyring_file" ]]; then
         log_info "Adding GitHub CLI repository GPG key..."
 
-        mkdir -p /etc/apt/keyrings
-        chmod 755 /etc/apt/keyrings
+        if ! mkdir -p /etc/apt/keyrings; then
+            log_error "Failed to create /etc/apt/keyrings"
+            return 1
+        fi
+        if ! chmod 755 /etc/apt/keyrings; then
+            log_error "Failed to set permissions on /etc/apt/keyrings"
+            return 1
+        fi
 
         local tmp_dir
         tmp_dir="$(mktemp -d)"
 
-        cleanup_gh() {
-            rm -rf "$tmp_dir"
-        }
-
-        trap cleanup_gh RETURN
-
         if ! curl -fsSL "https://cli.github.com/packages/githubcli-archive-keyring.gpg" \
              -o "$tmp_dir/githubcli-archive-keyring.gpg"; then
             log_error "Failed to download GitHub CLI GPG key"
+            rm -rf "$tmp_dir"
             return 1
         fi
 
-        install -D -o root -g root -m 644 "$tmp_dir/githubcli-archive-keyring.gpg" "$keyring_file"
+        if ! install -D -o root -g root -m 644 "$tmp_dir/githubcli-archive-keyring.gpg" "$keyring_file"; then
+            log_error "Failed to install GitHub CLI GPG key"
+            rm -rf "$tmp_dir"
+            return 1
+        fi
+        rm -rf "$tmp_dir"
         needs_update=true
     fi
 
     if [[ ! -f "$sources_file" ]] || ! grep -qxF "$expected_source" "$sources_file"; then
         log_info "Adding GitHub CLI repository..."
 
-        echo "$expected_source" > "$sources_file"
-        chmod 644 "$sources_file"
+        if ! echo "$expected_source" > "$sources_file"; then
+            log_error "Failed to write GitHub CLI repository source"
+            return 1
+        fi
+        if ! chmod 644 "$sources_file"; then
+            log_error "Failed to set permissions on $sources_file"
+            return 1
+        fi
         needs_update=true
     fi
 
@@ -86,14 +101,23 @@ setup_ssh_directory() {
     # Create if doesn't exist
     if [[ ! -d "$ssh_dir" ]]; then
         log_info "Creating SSH directory at $ssh_dir..."
-        mkdir -p "$ssh_dir"
+        if ! mkdir -p "$ssh_dir"; then
+            log_error "Failed to create SSH directory"
+            return 1
+        fi
     else
         log_info "SSH directory already exists at $ssh_dir"
     fi
 
     # ALWAYS enforce permissions, regardless of whether dir existed
-    chmod 700 "$ssh_dir"
-    ensure_target_ownership "$ssh_dir"
+    if ! chmod 700 "$ssh_dir"; then
+        log_error "Failed to set permissions on SSH directory"
+        return 1
+    fi
+    if ! ensure_target_ownership "$ssh_dir"; then
+        log_error "Failed to set ownership on SSH directory"
+        return 1
+    fi
 
     log_success "SSH directory ready"
     return 0
@@ -114,7 +138,7 @@ setup_git_config() {
 
     log_info "Creating minimal Git config at $git_config..."
 
-    cat > "$git_config" <<'EOF'
+    if ! cat > "$git_config" <<'EOF'
 [init]
 	defaultBranch = main
 
@@ -124,9 +148,19 @@ setup_git_config() {
 [core]
 	editor = nano
 EOF
+    then
+        log_error "Failed to write Git config file"
+        return 1
+    fi
 
-    ensure_target_ownership "$git_config"
-    chmod 644 "$git_config"
+    if ! ensure_target_ownership "$git_config"; then
+        log_error "Failed to set ownership on Git config"
+        return 1
+    fi
+    if ! chmod 644 "$git_config"; then
+        log_error "Failed to set permissions on Git config"
+        return 1
+    fi
 
     log_info "Configure Git user with:"
     log_info "  git config --global user.name \"Your Name\""
@@ -139,7 +173,9 @@ EOF
 install_git() {
     log_step "Installing Git tools"
 
-    ensure_git_prerequisites
+    if ! ensure_git_prerequisites; then
+        return 1
+    fi
 
     local packages=(
         git
@@ -149,7 +185,10 @@ install_git() {
     local package_name
 
     for package_name in "${packages[@]}"; do
-        install_apt_package "$package_name"
+        if ! install_apt_package "$package_name"; then
+            log_error "Required package installation failed: $package_name"
+            return 1
+        fi
     done
 
     # GitHub CLI is required
@@ -177,10 +216,11 @@ install_git() {
         log_success "Git LFS verified: $lfs_version"
 
         log_info "Initializing Git LFS..."
-        if run_as_target_user git lfs install; then
-            log_success "Git LFS initialized for user"
+        if ! run_as_target_user git lfs install; then
+            log_error "Git LFS initialization failed"
+            failed=true
         else
-            log_warning "Git LFS initialization failed"
+            log_success "Git LFS initialized for user"
         fi
     else
         log_error "Git LFS verification failed"
@@ -200,8 +240,15 @@ install_git() {
         return 1
     fi
 
-    setup_ssh_directory
-    setup_git_config
+    if ! setup_ssh_directory; then
+        log_error "SSH directory setup failed"
+        return 1
+    fi
+
+    if ! setup_git_config; then
+        log_error "Git config setup failed"
+        return 1
+    fi
 
     log_success "Git tools installation completed"
     return 0

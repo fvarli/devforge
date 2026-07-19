@@ -30,7 +30,7 @@ get_target_user() {
     if [[ -n "$sudo_user" && "$sudo_user" != "root" ]]; then
         echo "$sudo_user"
     else
-        echo "$USER"
+        id -un
     fi
 }
 
@@ -50,19 +50,21 @@ get_target_home() {
 
 run_as_target_user() {
     local target_user
+    local target_home
     local current_uid
     local target_uid
 
     target_user="$(get_target_user)"
+    target_home="$(get_target_home)"
     current_uid="$(id -u)"
     target_uid="$(id -u "$target_user")"
 
     # If already running as target user, execute directly
     if [[ "$current_uid" -eq "$target_uid" ]]; then
-        "$@"
+        HOME="$target_home" "$@"
     else
-        # Use -H to set HOME for the target user
-        sudo -u "$target_user" -H "$@"
+        # Use -H and explicit HOME for target user
+        sudo -H -u "$target_user" env HOME="$target_home" "$@"
     fi
 }
 
@@ -101,13 +103,25 @@ ensure_local_bin() {
 
     if [[ ! -d "$local_bin_dir" ]]; then
         log_info "Creating ~/.local/bin directory..."
-        mkdir -p "$local_bin_dir"
-        ensure_target_ownership "$local_bin_dir"
+        if ! mkdir -p "$local_bin_dir"; then
+            log_error "Failed to create $local_bin_dir"
+            return 1
+        fi
+        if ! ensure_target_ownership "$local_bin_dir"; then
+            log_error "Failed to set ownership for $local_bin_dir"
+            return 1
+        fi
     fi
 
     # Always ensure correct permissions
-    chmod 755 "$local_bin_dir"
-    ensure_target_ownership "$local_bin_dir"
+    if ! chmod 755 "$local_bin_dir"; then
+        log_error "Failed to set permissions for $local_bin_dir"
+        return 1
+    fi
+    if ! ensure_target_ownership "$local_bin_dir"; then
+        log_error "Failed to ensure ownership for $local_bin_dir"
+        return 1
+    fi
 }
 
 command_exists_for_user() {
@@ -138,7 +152,10 @@ refresh_apt_indexes() {
     fi
 
     log_info "Refreshing APT package indexes..."
-    apt-get update
+    if ! apt-get update; then
+        log_error "Failed to refresh APT package indexes"
+        return 1
+    fi
     touch "$APT_INDEXES_UPDATED_FLAG"
 }
 
@@ -159,9 +176,21 @@ install_apt_package() {
         return 0
     fi
 
-    refresh_apt_indexes
+    if ! refresh_apt_indexes; then
+        return 1
+    fi
 
     log_info "Installing $package_name..."
-    apt-get install -y "$package_name"
+    if ! apt-get install -y "$package_name"; then
+        log_error "Failed to install $package_name"
+        return 1
+    fi
+
+    # Verify installation succeeded
+    if ! package_installed "$package_name"; then
+        log_error "$package_name installation verification failed"
+        return 1
+    fi
+
     log_success "$package_name installed."
 }

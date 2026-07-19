@@ -11,7 +11,10 @@ ensure_terminal_prerequisites() {
     local package_name
 
     for package_name in "${prerequisites[@]}"; do
-        install_apt_package "$package_name"
+        if ! install_apt_package "$package_name"; then
+            log_error "Required prerequisite installation failed: $package_name"
+            return 1
+        fi
     done
 }
 
@@ -22,14 +25,26 @@ add_line_to_file_idempotent() {
     if [[ ! -f "$file" ]]; then
         local file_dir
         file_dir="$(dirname "$file")"
-        mkdir -p "$file_dir"
+        if ! mkdir -p "$file_dir"; then
+            log_error "Failed to create directory for $file"
+            return 1
+        fi
 
-        touch "$file"
-        ensure_target_ownership "$file"
+        if ! touch "$file"; then
+            log_error "Failed to create $file"
+            return 1
+        fi
+        if ! ensure_target_ownership "$file"; then
+            log_error "Failed to set ownership on $file"
+            return 1
+        fi
     fi
 
     if ! grep -qxF "$line" "$file"; then
-        echo "$line" >> "$file"
+        if ! echo "$line" >> "$file"; then
+            log_error "Failed to append to $file"
+            return 1
+        fi
         log_info "Added to $(basename "$file"): $line"
     fi
 }
@@ -45,22 +60,19 @@ install_starship() {
     local tmp_dir
     tmp_dir="$(mktemp -d)"
 
-    cleanup_starship() {
-        rm -rf "$tmp_dir"
-    }
-
-    trap cleanup_starship RETURN
-
     if ! curl -fsSL "https://starship.rs/install.sh" -o "$tmp_dir/starship-install.sh"; then
         log_error "Failed to download Starship installer"
+        rm -rf "$tmp_dir"
         return 1
     fi
 
     if ! sh "$tmp_dir/starship-install.sh" -y; then
         log_error "Failed to install Starship"
+        rm -rf "$tmp_dir"
         return 1
     fi
 
+    rm -rf "$tmp_dir"
     log_success "Starship installed"
     return 0
 }
@@ -124,33 +136,45 @@ install_eza() {
     if [[ ! -f "$keyring_file" ]]; then
         log_info "Adding eza repository GPG key..."
 
-        mkdir -p /etc/apt/keyrings
-        chmod 755 /etc/apt/keyrings
+        if ! mkdir -p /etc/apt/keyrings; then
+            log_error "Failed to create /etc/apt/keyrings"
+            return 1
+        fi
+        if ! chmod 755 /etc/apt/keyrings; then
+            log_error "Failed to set permissions on /etc/apt/keyrings"
+            return 1
+        fi
 
         local tmp_dir
         tmp_dir="$(mktemp -d)"
 
-        cleanup_eza() {
-            rm -rf "$tmp_dir"
-        }
-
-        trap cleanup_eza RETURN
-
         if ! wget -qO- "https://raw.githubusercontent.com/eza-community/eza/main/deb.asc" | \
              gpg --dearmor -o "$tmp_dir/gierens.gpg"; then
             log_error "Failed to download eza GPG key"
+            rm -rf "$tmp_dir"
             return 1
         fi
 
-        install -D -o root -g root -m 644 "$tmp_dir/gierens.gpg" "$keyring_file"
+        if ! install -D -o root -g root -m 644 "$tmp_dir/gierens.gpg" "$keyring_file"; then
+            log_error "Failed to install eza GPG key"
+            rm -rf "$tmp_dir"
+            return 1
+        fi
+        rm -rf "$tmp_dir"
         needs_update=true
     fi
 
     if [[ ! -f "$sources_file" ]] || ! grep -qxF "$expected_source" "$sources_file"; then
         log_info "Adding eza repository..."
 
-        echo "$expected_source" > "$sources_file"
-        chmod 644 "$sources_file"
+        if ! echo "$expected_source" > "$sources_file"; then
+            log_error "Failed to write eza repository source"
+            return 1
+        fi
+        if ! chmod 644 "$sources_file"; then
+            log_error "Failed to set permissions on $sources_file"
+            return 1
+        fi
         needs_update=true
     fi
 
@@ -190,29 +214,27 @@ install_zoxide() {
     local tmp_dir
     tmp_dir="$(mktemp -d)"
 
-    cleanup_zoxide() {
-        rm -rf "$tmp_dir"
-    }
-
-    trap cleanup_zoxide RETURN
-
     if ! curl -fsSL "https://raw.githubusercontent.com/ajeetdsouza/zoxide/main/install.sh" \
          -o "$tmp_dir/zoxide-install.sh"; then
         log_error "Failed to download zoxide installer"
+        rm -rf "$tmp_dir"
         return 1
     fi
 
     if ! HOME="$target_home" run_as_target_user sh "$tmp_dir/zoxide-install.sh"; then
         log_error "Failed to install zoxide"
+        rm -rf "$tmp_dir"
         return 1
     fi
 
     # Verify installation
     if ! command_exists_for_user zoxide; then
         log_error "zoxide installed but verification failed"
+        rm -rf "$tmp_dir"
         return 1
     fi
 
+    rm -rf "$tmp_dir"
     log_success "zoxide installed"
     return 0
 }
@@ -230,8 +252,14 @@ configure_zoxide() {
 install_terminal() {
     log_step "Installing terminal tools"
 
-    ensure_terminal_prerequisites
-    ensure_local_bin
+    if ! ensure_terminal_prerequisites; then
+        return 1
+    fi
+
+    if ! ensure_local_bin; then
+        log_error "Failed to ensure ~/.local/bin directory"
+        return 1
+    fi
 
     local packages=(
         zsh
@@ -243,7 +271,10 @@ install_terminal() {
     local package_name
 
     for package_name in "${packages[@]}"; do
-        install_apt_package "$package_name"
+        if ! install_apt_package "$package_name"; then
+            log_error "Required package installation failed: $package_name"
+            return 1
+        fi
     done
 
     # Required tools - fail if they don't install
@@ -267,37 +298,39 @@ install_terminal() {
         return 1
     fi
 
-    # Configure only if tools are available
+    # Configure tools (required for terminal module)
     if command_exists starship; then
-        configure_starship
+        if ! configure_starship; then
+            log_error "Starship configuration failed"
+            return 1
+        fi
     fi
 
     if command_exists_for_user zoxide; then
-        configure_zoxide
+        if ! configure_zoxide; then
+            log_error "zoxide configuration failed"
+            return 1
+        fi
     fi
 
     log_info "Verifying terminal tools..."
 
     local failed=false
+    local cmd
 
-    # Verify base packages
-    for package_name in "${packages[@]}"; do
-        if ! command_exists "$package_name"; then
-            log_error "Required package verification failed: $package_name"
-            failed=true
-        fi
-    done
+    # Verify base commands (note: 'bat' package installs as 'batcat' command)
+    local required_commands=(
+        zsh
+        fzf
+        batcat
+        tmux
+        eza
+        starship
+    )
 
-    # Verify batcat specifically
-    if ! command_exists batcat; then
-        log_error "batcat verification failed"
-        failed=true
-    fi
-
-    # Verify required tools
-    for tool in eza starship; do
-        if ! command_exists "$tool"; then
-            log_error "Tool verification failed: $tool"
+    for cmd in "${required_commands[@]}"; do
+        if ! command_exists "$cmd"; then
+            log_error "Required command verification failed: $cmd"
             failed=true
         fi
     done

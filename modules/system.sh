@@ -32,12 +32,22 @@ install_system() {
     local package_name
 
     for package_name in "${packages[@]}"; do
-        install_apt_package "$package_name"
+        if ! install_apt_package "$package_name"; then
+            log_error "Required package installation failed: $package_name"
+            return 1
+        fi
     done
 
     if [[ "${ENABLE_SYSTEM_UPGRADE:-false}" == "true" ]]; then
         log_warning "System upgrade is enabled."
-        apt-get upgrade -y
+        if ! refresh_apt_indexes; then
+            log_error "Failed to refresh indexes before upgrade"
+            return 1
+        fi
+        if ! apt-get upgrade -y; then
+            log_error "System upgrade failed"
+            return 1
+        fi
     else
         log_info "System upgrade disabled by configuration."
     fi

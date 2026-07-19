@@ -75,19 +75,18 @@ sudo ./install.sh --system --terminal --git
 
 ## Supported distributions
 
-Ubuntu-based distributions are supported on a best-effort basis.
-Primary development target is current Ubuntu/Kubuntu LTS releases.
+Primary targets:
+- Ubuntu LTS (current)
+- Kubuntu LTS (current)
 
-Tested on:
-- Ubuntu 22.04 LTS (Jammy Jellyfish)
-- Kubuntu 22.04 LTS
-- Xubuntu 22.04 LTS
-- Pop!_OS 22.04
-- Linux Mint 21
+Best-effort support:
+- Xubuntu
+- Pop!_OS
+- Linux Mint
 
 Note: Some packages (btop, fastfetch, eza) may not be available
-in Ubuntu 20.04 repositories and would require alternative
-installation methods.
+in older repositories and would require alternative installation
+methods.
 
 ## License
 
