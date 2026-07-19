@@ -1,19 +1,32 @@
 #!/usr/bin/env bash
 
 install_system() {
-    log_info "Refreshing APT package indexes..."
-    apt-get update
+    log_step "Installing system utilities"
 
     local packages=(
         ca-certificates
         curl
         wget
-        git
         unzip
         zip
+        p7zip-full
+        software-properties-common
+        apt-transport-https
         tree
         jq
+        ripgrep
+        fd-find
         rsync
+        htop
+        btop
+        fastfetch
+        ncdu
+        dnsutils
+        net-tools
+        traceroute
+        openssh-client
+        openssh-server
+        ufw
     )
 
     local package_name
@@ -28,4 +41,7 @@ install_system() {
     else
         log_info "System upgrade disabled by configuration."
     fi
+
+    log_success "System utilities installation completed"
+    return 0
 }
