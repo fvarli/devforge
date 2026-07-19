@@ -1,0 +1,6 @@
+config.env
+logs/*.log
+.env
+*.tmp
+*.swp
+.DS_Store
