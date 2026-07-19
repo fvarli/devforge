@@ -31,18 +31,18 @@ Essential system utilities and tools:
 
 ### terminal
 
-Modern terminal tools and shell enhancements:
+Modern terminal tools and shell enhancements (all required):
 - Shells: zsh
 - Terminal multiplexer: tmux
 - Fuzzy finder: fzf
-- File viewers: bat
+- File viewers: bat (batcat)
 - Directory navigation: zoxide
 - File listing: eza
 - Prompt: Starship
 
 ### git
 
-Version control and collaboration tools:
+Version control and collaboration tools (all required):
 - Git and Git LFS
 - GitHub CLI (gh)
 - Automatic SSH directory setup (with proper permissions)
@@ -75,11 +75,19 @@ sudo ./install.sh --system --terminal --git
 
 ## Supported distributions
 
-- Ubuntu 20.04 LTS and newer
-- Kubuntu
-- Xubuntu
-- Pop!_OS
-- Linux Mint
+Ubuntu-based distributions are supported on a best-effort basis.
+Primary development target is current Ubuntu/Kubuntu LTS releases.
+
+Tested on:
+- Ubuntu 22.04 LTS (Jammy Jellyfish)
+- Kubuntu 22.04 LTS
+- Xubuntu 22.04 LTS
+- Pop!_OS 22.04
+- Linux Mint 21
+
+Note: Some packages (btop, fastfetch, eza) may not be available
+in Ubuntu 20.04 repositories and would require alternative
+installation methods.
 
 ## License
 

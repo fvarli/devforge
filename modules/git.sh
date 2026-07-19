@@ -39,9 +39,10 @@ install_gh_cli() {
         local tmp_dir
         tmp_dir="$(mktemp -d)"
 
-        local cleanup_gh() {
+        cleanup_gh() {
             rm -rf "$tmp_dir"
         }
+
         trap cleanup_gh RETURN
 
         if ! curl -fsSL "https://cli.github.com/packages/githubcli-archive-keyring.gpg" \
@@ -82,29 +83,19 @@ setup_ssh_directory() {
 
     local ssh_dir="$target_home/.ssh"
 
-    if [[ -d "$ssh_dir" ]]; then
-        log_info "SSH directory already exists at $ssh_dir. Skipping."
-        return 0
+    # Create if doesn't exist
+    if [[ ! -d "$ssh_dir" ]]; then
+        log_info "Creating SSH directory at $ssh_dir..."
+        mkdir -p "$ssh_dir"
+    else
+        log_info "SSH directory already exists at $ssh_dir"
     fi
 
-    log_info "Creating SSH directory at $ssh_dir..."
-
-    if ! mkdir -p "$ssh_dir"; then
-        log_error "Failed to create SSH directory"
-        return 1
-    fi
-
+    # ALWAYS enforce permissions, regardless of whether dir existed
     chmod 700 "$ssh_dir"
+    ensure_target_ownership "$ssh_dir"
 
-    if [[ "$target_user" != "$USER" ]]; then
-        local user_uid
-        local user_gid
-        user_uid="$(id -u "$target_user")"
-        user_gid="$(id -g "$target_user")"
-        chown "$user_uid:$user_gid" "$ssh_dir"
-    fi
-
-    log_success "SSH directory created"
+    log_success "SSH directory ready"
     return 0
 }
 
@@ -124,11 +115,6 @@ setup_git_config() {
     log_info "Creating minimal Git config at $git_config..."
 
     cat > "$git_config" <<'EOF'
-[user]
-	# Configure your name and email:
-	# git config --global user.name "Your Name"
-	# git config --global user.email "your.email@example.com"
-
 [init]
 	defaultBranch = main
 
@@ -139,13 +125,12 @@ setup_git_config() {
 	editor = nano
 EOF
 
-    if [[ "$target_user" != "$USER" ]]; then
-        local user_uid
-        local user_gid
-        user_uid="$(id -u "$target_user")"
-        user_gid="$(id -g "$target_user")"
-        chown "$user_uid:$user_gid" "$git_config"
-    fi
+    ensure_target_ownership "$git_config"
+    chmod 644 "$git_config"
+
+    log_info "Configure Git user with:"
+    log_info "  git config --global user.name \"Your Name\""
+    log_info "  git config --global user.email \"your.email@example.com\""
 
     log_success "Git config created"
     return 0
@@ -167,8 +152,10 @@ install_git() {
         install_apt_package "$package_name"
     done
 
+    # GitHub CLI is required
     if ! install_gh_cli; then
-        log_warning "GitHub CLI installation failed, continuing with other tools"
+        log_error "GitHub CLI installation failed"
+        return 1
     fi
 
     log_info "Verifying Git installation..."
@@ -205,7 +192,8 @@ install_git() {
         gh_version="$(gh --version | head -n1)"
         log_success "GitHub CLI verified: $gh_version"
     else
-        log_warning "GitHub CLI verification failed"
+        log_error "GitHub CLI verification failed"
+        failed=true
     fi
 
     if [[ "$failed" == "true" ]]; then
