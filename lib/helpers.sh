@@ -194,3 +194,292 @@ install_apt_package() {
 
     log_success "$package_name installed."
 }
+
+require_architecture() {
+    local expected_arch="$1"
+    local display_name="${2:-current module}"
+    local actual_arch
+
+    actual_arch="$(dpkg --print-architecture)"
+
+    if [[ "$actual_arch" != "$expected_arch" ]]; then
+        log_error "$display_name requires $expected_arch architecture (detected: $actual_arch)"
+        return 1
+    fi
+
+    return 0
+}
+
+require_amd64() {
+    require_architecture "amd64" "${1:-This module}"
+}
+
+download_file() {
+    local url="$1"
+    local output_path="$2"
+
+    # Prefer curl, fallback to wget
+    if command_exists curl; then
+        if ! curl -fsSL "$url" -o "$output_path"; then
+            log_error "Failed to download: $url"
+            rm -f "$output_path"
+            return 1
+        fi
+    elif command_exists wget; then
+        if ! wget -O "$output_path" "$url"; then
+            log_error "Failed to download: $url"
+            rm -f "$output_path"
+            return 1
+        fi
+    else
+        log_error "Neither curl nor wget is available"
+        return 1
+    fi
+
+    # Verify file exists and is non-empty
+    if [[ ! -s "$output_path" ]]; then
+        log_error "Downloaded file is empty or missing: $output_path"
+        rm -f "$output_path"
+        return 1
+    fi
+
+    return 0
+}
+
+create_temp_dir() {
+    local tmp_dir
+    tmp_dir="$(mktemp -d)"
+
+    if [[ ! -d "$tmp_dir" ]]; then
+        log_error "Failed to create temporary directory"
+        return 1
+    fi
+
+    echo "$tmp_dir"
+    return 0
+}
+
+cleanup_temp_dir() {
+    local tmp_dir="$1"
+
+    # Safety checks
+    if [[ -z "$tmp_dir" ]]; then
+        log_warning "cleanup_temp_dir called with empty path"
+        return 1
+    fi
+
+    if [[ "$tmp_dir" == "/" ]] || [[ "$tmp_dir" == "/tmp" ]] || [[ "$tmp_dir" == "$HOME" ]]; then
+        log_warning "Refusing to delete dangerous path: $tmp_dir"
+        return 1
+    fi
+
+    if [[ ! -d "$tmp_dir" ]]; then
+        # Not an error - directory may have already been cleaned
+        return 0
+    fi
+
+    if ! rm -rf "$tmp_dir"; then
+        log_warning "Failed to clean up temporary directory: $tmp_dir"
+        return 1
+    fi
+
+    return 0
+}
+
+ensure_apt_repository() {
+    local key_url="$1"
+    local keyring_file="$2"
+    local sources_file="$3"
+    local source_line="$4"
+    local key_format="${5:-binary}"  # binary or dearmor
+
+    local needs_update=false
+
+    # Ensure /etc/apt/keyrings exists
+    if [[ ! -d /etc/apt/keyrings ]]; then
+        if ! mkdir -p /etc/apt/keyrings; then
+            log_error "Failed to create /etc/apt/keyrings"
+            return 1
+        fi
+        if ! chmod 755 /etc/apt/keyrings; then
+            log_error "Failed to set permissions on /etc/apt/keyrings"
+            return 1
+        fi
+    fi
+
+    # Download and install GPG key if missing
+    if [[ ! -f "$keyring_file" ]]; then
+        log_info "Adding repository GPG key..."
+
+        local tmp_dir
+        if ! tmp_dir="$(create_temp_dir)"; then
+            return 1
+        fi
+
+        local tmp_key="$tmp_dir/repo.key"
+
+        if [[ "$key_format" == "dearmor" ]]; then
+            # Download and dearmor in one step
+            if command_exists curl; then
+                if ! curl -fsSL "$key_url" | gpg --dearmor -o "$tmp_key"; then
+                    log_error "Failed to download and dearmor repository key"
+                    cleanup_temp_dir "$tmp_dir"
+                    return 1
+                fi
+            elif command_exists wget; then
+                if ! wget -qO- "$key_url" | gpg --dearmor -o "$tmp_key"; then
+                    log_error "Failed to download and dearmor repository key"
+                    cleanup_temp_dir "$tmp_dir"
+                    return 1
+                fi
+            else
+                log_error "Neither curl nor wget is available"
+                cleanup_temp_dir "$tmp_dir"
+                return 1
+            fi
+        else
+            # Binary format - direct download
+            if ! download_file "$key_url" "$tmp_key"; then
+                cleanup_temp_dir "$tmp_dir"
+                return 1
+            fi
+        fi
+
+        # Install keyring with correct permissions
+        if ! install -D -o root -g root -m 644 "$tmp_key" "$keyring_file"; then
+            log_error "Failed to install repository keyring"
+            cleanup_temp_dir "$tmp_dir"
+            return 1
+        fi
+
+        cleanup_temp_dir "$tmp_dir"
+        needs_update=true
+    fi
+
+    # Write or update sources file
+    if [[ ! -f "$sources_file" ]] || ! grep -qxF "$source_line" "$sources_file"; then
+        log_info "Adding repository source..."
+
+        # Write atomically using temp file
+        local tmp_sources
+        tmp_sources="$(mktemp)"
+
+        if ! echo "$source_line" > "$tmp_sources"; then
+            log_error "Failed to write repository source"
+            rm -f "$tmp_sources"
+            return 1
+        fi
+
+        if ! install -o root -g root -m 644 "$tmp_sources" "$sources_file"; then
+            log_error "Failed to install repository source file"
+            rm -f "$tmp_sources"
+            return 1
+        fi
+
+        rm -f "$tmp_sources"
+        needs_update=true
+    fi
+
+    # Mark APT indexes stale if changes were made
+    if [[ "$needs_update" == "true" ]]; then
+        mark_apt_indexes_stale
+    fi
+
+    return 0
+}
+
+install_deb_from_url() {
+    local package_name="$1"
+    local display_name="$2"
+    local url="$3"
+    local verify_command="$4"
+
+    # Check if already installed
+    if package_installed "$package_name" || command_exists "$verify_command"; then
+        log_info "$display_name is already installed. Skipping."
+        return 0
+    fi
+
+    log_info "Installing $display_name..."
+
+    # Ensure downloader available
+    if ! command_exists wget && ! command_exists curl; then
+        if ! install_apt_package wget; then
+            log_error "Failed to install wget prerequisite"
+            return 1
+        fi
+    fi
+
+    # Create temporary directory
+    local tmp_dir
+    if ! tmp_dir="$(create_temp_dir)"; then
+        return 1
+    fi
+
+    local deb_file="$tmp_dir/package.deb"
+
+    # Download .deb package
+    if ! download_file "$url" "$deb_file"; then
+        cleanup_temp_dir "$tmp_dir"
+        return 1
+    fi
+
+    # Validate .deb package
+    if ! dpkg-deb --info "$deb_file" >/dev/null 2>&1; then
+        log_error "Downloaded file is not a valid .deb package"
+        cleanup_temp_dir "$tmp_dir"
+        return 1
+    fi
+
+    # Install package
+    if ! apt-get install -y "$deb_file"; then
+        log_error "Failed to install $display_name"
+        cleanup_temp_dir "$tmp_dir"
+        return 1
+    fi
+
+    # Verify installation
+    local install_verified=false
+
+    if package_installed "$package_name"; then
+        install_verified=true
+    elif command_exists "$verify_command"; then
+        install_verified=true
+    fi
+
+    if [[ "$install_verified" != "true" ]]; then
+        log_error "$display_name installation verification failed"
+        cleanup_temp_dir "$tmp_dir"
+        return 1
+    fi
+
+    cleanup_temp_dir "$tmp_dir"
+    log_success "$display_name installed"
+    return 0
+}
+
+verify_command() {
+    local command_name="$1"
+    local display_name="$2"
+    shift 2
+    # Remaining args are the version command
+
+    if ! command_exists "$command_name"; then
+        log_error "$display_name verification failed: command not found"
+        return 1
+    fi
+
+    # If version args provided, try to get version
+    if [[ $# -gt 0 ]]; then
+        local version_output
+        if version_output=$("$@" 2>/dev/null | head -n1); then
+            log_success "$display_name verified: $version_output"
+        else
+            log_success "$display_name verified (version unavailable)"
+        fi
+    else
+        log_success "$display_name verified"
+    fi
+
+    return 0
+}

@@ -58,21 +58,22 @@ install_starship() {
     log_info "Installing Starship..."
 
     local tmp_dir
-    tmp_dir="$(mktemp -d)"
+    if ! tmp_dir="$(create_temp_dir)"; then
+        return 1
+    fi
 
-    if ! curl -fsSL "https://starship.rs/install.sh" -o "$tmp_dir/starship-install.sh"; then
-        log_error "Failed to download Starship installer"
-        rm -rf "$tmp_dir"
+    if ! download_file "https://starship.rs/install.sh" "$tmp_dir/starship-install.sh"; then
+        cleanup_temp_dir "$tmp_dir"
         return 1
     fi
 
     if ! sh "$tmp_dir/starship-install.sh" -y; then
         log_error "Failed to install Starship"
-        rm -rf "$tmp_dir"
+        cleanup_temp_dir "$tmp_dir"
         return 1
     fi
 
-    rm -rf "$tmp_dir"
+    cleanup_temp_dir "$tmp_dir"
     log_success "Starship installed"
     return 0
 }
@@ -127,59 +128,14 @@ install_eza() {
 
     log_info "Installing eza..."
 
-    local keyring_file="/etc/apt/keyrings/gierens.gpg"
-    local sources_file="/etc/apt/sources.list.d/gierens.list"
-    local expected_source="deb [signed-by=/etc/apt/keyrings/gierens.gpg] http://deb.gierens.de stable main"
-
-    local needs_update=false
-
-    if [[ ! -f "$keyring_file" ]]; then
-        log_info "Adding eza repository GPG key..."
-
-        if ! mkdir -p /etc/apt/keyrings; then
-            log_error "Failed to create /etc/apt/keyrings"
-            return 1
-        fi
-        if ! chmod 755 /etc/apt/keyrings; then
-            log_error "Failed to set permissions on /etc/apt/keyrings"
-            return 1
-        fi
-
-        local tmp_dir
-        tmp_dir="$(mktemp -d)"
-
-        if ! wget -qO- "https://raw.githubusercontent.com/eza-community/eza/main/deb.asc" | \
-             gpg --dearmor -o "$tmp_dir/gierens.gpg"; then
-            log_error "Failed to download eza GPG key"
-            rm -rf "$tmp_dir"
-            return 1
-        fi
-
-        if ! install -D -o root -g root -m 644 "$tmp_dir/gierens.gpg" "$keyring_file"; then
-            log_error "Failed to install eza GPG key"
-            rm -rf "$tmp_dir"
-            return 1
-        fi
-        rm -rf "$tmp_dir"
-        needs_update=true
-    fi
-
-    if [[ ! -f "$sources_file" ]] || ! grep -qxF "$expected_source" "$sources_file"; then
-        log_info "Adding eza repository..."
-
-        if ! echo "$expected_source" > "$sources_file"; then
-            log_error "Failed to write eza repository source"
-            return 1
-        fi
-        if ! chmod 644 "$sources_file"; then
-            log_error "Failed to set permissions on $sources_file"
-            return 1
-        fi
-        needs_update=true
-    fi
-
-    if [[ "$needs_update" == "true" ]]; then
-        mark_apt_indexes_stale
+    # Set up repository
+    if ! ensure_apt_repository \
+        "https://raw.githubusercontent.com/eza-community/eza/main/deb.asc" \
+        "/etc/apt/keyrings/gierens.gpg" \
+        "/etc/apt/sources.list.d/gierens.list" \
+        "deb [signed-by=/etc/apt/keyrings/gierens.gpg] http://deb.gierens.de stable main" \
+        "dearmor"; then
+        return 1
     fi
 
     if ! install_apt_package eza; then
@@ -212,29 +168,29 @@ install_zoxide() {
     target_home="$(get_target_home)"
 
     local tmp_dir
-    tmp_dir="$(mktemp -d)"
+    if ! tmp_dir="$(create_temp_dir)"; then
+        return 1
+    fi
 
-    if ! curl -fsSL "https://raw.githubusercontent.com/ajeetdsouza/zoxide/main/install.sh" \
-         -o "$tmp_dir/zoxide-install.sh"; then
-        log_error "Failed to download zoxide installer"
-        rm -rf "$tmp_dir"
+    if ! download_file "https://raw.githubusercontent.com/ajeetdsouza/zoxide/main/install.sh" "$tmp_dir/zoxide-install.sh"; then
+        cleanup_temp_dir "$tmp_dir"
         return 1
     fi
 
     if ! HOME="$target_home" run_as_target_user sh "$tmp_dir/zoxide-install.sh"; then
         log_error "Failed to install zoxide"
-        rm -rf "$tmp_dir"
+        cleanup_temp_dir "$tmp_dir"
         return 1
     fi
 
     # Verify installation
     if ! command_exists_for_user zoxide; then
         log_error "zoxide installed but verification failed"
-        rm -rf "$tmp_dir"
+        cleanup_temp_dir "$tmp_dir"
         return 1
     fi
 
-    rm -rf "$tmp_dir"
+    cleanup_temp_dir "$tmp_dir"
     log_success "zoxide installed"
     return 0
 }

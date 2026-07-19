@@ -20,6 +20,9 @@ source "$DEVFORGE_ROOT/lib/modules.sh"
 # shellcheck source=lib/cli.sh
 source "$DEVFORGE_ROOT/lib/cli.sh"
 
+# shellcheck source=lib/flatpak.sh
+source "$DEVFORGE_ROOT/lib/flatpak.sh"
+
 on_error() {
     local exit_code=$?
     local line_number="${1:-unknown}"

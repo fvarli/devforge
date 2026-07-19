@@ -50,17 +50,17 @@ Version control and collaboration tools (all required):
 
 ### browsers
 
-Web browsers:
-- Google Chrome Stable (amd64 only)
-- Brave Browser
+Web browsers (amd64 only):
+- Google Chrome Stable (official .deb package)
+- Brave Browser (official APT repository)
 
 ### apps
 
-Desktop applications:
-- Development: Visual Studio Code, DBeaver CE
-- Media: VLC Media Player, Spotify (via Flatpak)
+Desktop applications (amd64 only for VS Code/DBeaver):
+- Development: Visual Studio Code (Microsoft APT repository), DBeaver CE (official .deb package)
+- Media: VLC Media Player, Spotify (Flatpak from Flathub)
 - Utilities: FileZilla, KeePassXC
-- Security: Bitwarden (via Flatpak)
+- Security: Bitwarden (Flatpak from Flathub)
 
 Note: Flatpak applications are installed system-wide from Flathub.
 

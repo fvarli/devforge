@@ -25,61 +25,19 @@ install_gh_cli() {
 
     log_info "Installing GitHub CLI..."
 
-    local keyring_file="/etc/apt/keyrings/githubcli-archive-keyring.gpg"
-    local sources_file="/etc/apt/sources.list.d/github-cli.list"
-    local arch
-    arch="$(dpkg --print-architecture)"
-    local expected_source="deb [arch=${arch} signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main"
-
-    local needs_update=false
-
-    if [[ ! -f "$keyring_file" ]]; then
-        log_info "Adding GitHub CLI repository GPG key..."
-
-        if ! mkdir -p /etc/apt/keyrings; then
-            log_error "Failed to create /etc/apt/keyrings"
-            return 1
-        fi
-        if ! chmod 755 /etc/apt/keyrings; then
-            log_error "Failed to set permissions on /etc/apt/keyrings"
-            return 1
-        fi
-
-        local tmp_dir
-        tmp_dir="$(mktemp -d)"
-
-        if ! curl -fsSL "https://cli.github.com/packages/githubcli-archive-keyring.gpg" \
-             -o "$tmp_dir/githubcli-archive-keyring.gpg"; then
-            log_error "Failed to download GitHub CLI GPG key"
-            rm -rf "$tmp_dir"
-            return 1
-        fi
-
-        if ! install -D -o root -g root -m 644 "$tmp_dir/githubcli-archive-keyring.gpg" "$keyring_file"; then
-            log_error "Failed to install GitHub CLI GPG key"
-            rm -rf "$tmp_dir"
-            return 1
-        fi
-        rm -rf "$tmp_dir"
-        needs_update=true
+    # Check architecture
+    if ! require_amd64 "GitHub CLI"; then
+        return 1
     fi
 
-    if [[ ! -f "$sources_file" ]] || ! grep -qxF "$expected_source" "$sources_file"; then
-        log_info "Adding GitHub CLI repository..."
-
-        if ! echo "$expected_source" > "$sources_file"; then
-            log_error "Failed to write GitHub CLI repository source"
-            return 1
-        fi
-        if ! chmod 644 "$sources_file"; then
-            log_error "Failed to set permissions on $sources_file"
-            return 1
-        fi
-        needs_update=true
-    fi
-
-    if [[ "$needs_update" == "true" ]]; then
-        mark_apt_indexes_stale
+    # Set up repository
+    if ! ensure_apt_repository \
+        "https://cli.github.com/packages/githubcli-archive-keyring.gpg" \
+        "/etc/apt/keyrings/githubcli-archive-keyring.gpg" \
+        "/etc/apt/sources.list.d/github-cli.list" \
+        "deb [arch=amd64 signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
+        "binary"; then
+        return 1
     fi
 
     if ! install_apt_package gh; then
@@ -201,20 +159,18 @@ install_git() {
 
     local failed=false
 
-    if command_exists git; then
-        local git_version
-        git_version="$(git --version)"
-        log_success "Git verified: $git_version"
-    else
-        log_error "Git verification failed"
+    # Verify Git
+    if ! verify_command git "Git" git --version; then
         failed=true
     fi
 
+    # Verify Git LFS
     if command_exists git-lfs; then
-        local lfs_version
-        lfs_version="$(git-lfs --version)"
-        log_success "Git LFS verified: $lfs_version"
+        if ! verify_command git-lfs "Git LFS" git-lfs --version; then
+            failed=true
+        fi
 
+        # Git LFS init still needs special handling
         log_info "Initializing Git LFS..."
         if ! run_as_target_user git lfs install; then
             log_error "Git LFS initialization failed"
@@ -227,12 +183,8 @@ install_git() {
         failed=true
     fi
 
-    if command_exists gh; then
-        local gh_version
-        gh_version="$(gh --version | head -n1)"
-        log_success "GitHub CLI verified: $gh_version"
-    else
-        log_error "GitHub CLI verification failed"
+    # Verify GitHub CLI
+    if ! verify_command gh "GitHub CLI" gh --version; then
         failed=true
     fi
 
