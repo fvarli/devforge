@@ -5,17 +5,27 @@ set -Eeuo pipefail
 DEVFORGE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 export DEVFORGE_ROOT
 
+# shellcheck source=lib/logging.sh
 source "$DEVFORGE_ROOT/lib/logging.sh"
+
+# shellcheck source=lib/helpers.sh
 source "$DEVFORGE_ROOT/lib/helpers.sh"
+
+# shellcheck source=lib/distro.sh
 source "$DEVFORGE_ROOT/lib/distro.sh"
+
+# shellcheck source=lib/modules.sh
 source "$DEVFORGE_ROOT/lib/modules.sh"
+
+# shellcheck source=lib/cli.sh
+source "$DEVFORGE_ROOT/lib/cli.sh"
 
 on_error() {
     local exit_code=$?
     local line_number="${1:-unknown}"
 
-    log_error "Installation failed near line $line_number."
-    log_error "Exit code: $exit_code"
+    log_error "DevForge failed near line ${line_number}."
+    log_error "Exit code: ${exit_code}"
 
     exit "$exit_code"
 }
@@ -23,14 +33,14 @@ on_error() {
 trap 'on_error "$LINENO"' ERR
 
 print_banner() {
-    cat <<'BANNER'
+    cat <<EOF
 
 ========================================
- DevForge
+ DevForge ${DEVFORGE_VERSION}
  Developer Workstation Bootstrap
 ========================================
 
-BANNER
+EOF
 }
 
 load_configuration() {
@@ -42,31 +52,49 @@ load_configuration() {
         cp "$DEVFORGE_ROOT/config.env.example" "$config_file"
     fi
 
-    # shellcheck disable=SC1090
+    # shellcheck source=/dev/null
     source "$config_file"
 }
 
-main() {
-    print_banner
-
+validate_environment() {
     require_root
     require_command apt-get
     require_command dpkg-query
+}
 
+main() {
+    parse_arguments "$@"
+
+    if [[ "$SHOW_HELP" == "true" ]]; then
+        print_help
+        exit 0
+    fi
+
+    if [[ "$SHOW_VERSION" == "true" ]]; then
+        print_version
+        exit 0
+    fi
+
+    print_banner
+    validate_environment
     load_configuration
 
     detect_distro
     validate_distro
     print_distro
 
-    if [[ "${INSTALL_SYSTEM:-false}" == "true" ]]; then
-        run_module system
-    else
-        log_info "System module disabled."
+    if [[ "$INTERACTIVE_MODE" == "true" ]]; then
+        run_interactive_selection
     fi
 
+    print_selected_modules
+    confirm_installation
+
+    run_selected_modules
+    print_installation_summary
+
     printf "\n"
-    log_success "DevForge foundation completed."
+    log_success "DevForge completed successfully."
 }
 
 main "$@"
