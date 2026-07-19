@@ -48,6 +48,22 @@ Version control and collaboration tools (all required):
 - Automatic SSH directory setup (with proper permissions)
 - Minimal .gitconfig template (if not exists)
 
+### browsers
+
+Web browsers:
+- Google Chrome Stable (amd64 only)
+- Brave Browser
+
+### apps
+
+Desktop applications:
+- Development: Visual Studio Code, DBeaver CE
+- Media: VLC Media Player, Spotify (via Flatpak)
+- Utilities: FileZilla, KeePassXC
+- Security: Bitwarden (via Flatpak)
+
+Note: Flatpak applications are installed system-wide from Flathub.
+
 ## Usage
 
 Clone and run with interactive module selection:
@@ -65,12 +81,15 @@ Install specific modules:
 sudo ./install.sh --system
 sudo ./install.sh --terminal
 sudo ./install.sh --git
+sudo ./install.sh --browsers
+sudo ./install.sh --apps
 ```
 
 Install multiple modules:
 
 ```bash
 sudo ./install.sh --system --terminal --git
+sudo ./install.sh --browsers --apps
 ```
 
 ## Supported distributions
