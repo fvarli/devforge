@@ -32,6 +32,9 @@ Pre-release verification checklist for DevForge.
 
 ## Manual Testing
 
+For detailed VM testing procedures, see [docs/VM_TESTING.md](docs/VM_TESTING.md).
+Use [docs/VM_TEST_RESULT_TEMPLATE.md](docs/VM_TEST_RESULT_TEMPLATE.md) to document results.
+
 ### Clean Ubuntu VM
 
 - [ ] Fresh Ubuntu 24.04 LTS VM

@@ -421,6 +421,10 @@ bash -n install.sh lib/*.sh modules/*.sh
 shellcheck install.sh lib/*.sh modules/*.sh
 ```
 
+### VM Testing
+
+For release validation, see [docs/VM_TESTING.md](docs/VM_TESTING.md).
+
 ## License
 
 MIT License - see LICENSE file for details.
