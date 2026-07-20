@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 
+# System module for DevForge
+# Installs core system utilities: curl, wget, htop, ripgrep, etc.
+
 install_system() {
     log_step "Installing system utilities"
 

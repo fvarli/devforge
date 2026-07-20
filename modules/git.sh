@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
 
+# Git module for DevForge
+# Installs Git, Git LFS, GitHub CLI, and configures SSH/git
+
+# Install prerequisites for git module
 ensure_git_prerequisites() {
     local prerequisites=(
         ca-certificates

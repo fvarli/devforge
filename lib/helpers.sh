@@ -1,11 +1,16 @@
 #!/usr/bin/env bash
 
+# Helper functions for DevForge
+# Core utilities for package management, user handling, and file operations
+
 APT_INDEXES_UPDATED_FLAG="/tmp/devforge-apt-updated-$$"
 
+# Check if a command exists in PATH
 command_exists() {
     command -v "$1" >/dev/null 2>&1
 }
 
+# Die if required command is not found
 require_command() {
     local command_name="$1"
 
@@ -14,10 +19,12 @@ require_command() {
     fi
 }
 
+# Check if running as root (EUID 0)
 is_root() {
     [[ "${EUID}" -eq 0 ]]
 }
 
+# Die if not running as root
 require_root() {
     if ! is_root; then
         die "DevForge must be run with sudo: sudo ./install.sh"
@@ -50,6 +57,7 @@ enable_systemd_service() {
     return 0
 }
 
+# Get the target user (SUDO_USER or current user)
 get_target_user() {
     local sudo_user="${SUDO_USER:-}"
 
@@ -60,6 +68,7 @@ get_target_user() {
     fi
 }
 
+# Get target user's home directory
 get_target_home() {
     local target_user
     target_user="$(get_target_user)"
@@ -74,6 +83,7 @@ get_target_home() {
     echo "$target_home"
 }
 
+# Execute command as target user with proper HOME
 run_as_target_user() {
     local target_user
     local target_home
@@ -94,6 +104,7 @@ run_as_target_user() {
     fi
 }
 
+# Change ownership of path to target user
 ensure_target_ownership() {
     local path="$1"
     local recursive="${2:-false}"
@@ -120,6 +131,7 @@ ensure_target_ownership() {
     fi
 }
 
+# Create and configure ~/.local/bin directory
 ensure_local_bin() {
     local target_home
     local local_bin_dir
@@ -150,6 +162,7 @@ ensure_local_bin() {
     fi
 }
 
+# Check if command exists for target user (includes ~/.local/bin)
 command_exists_for_user() {
     local command_name="$1"
     local target_home
@@ -168,10 +181,12 @@ command_exists_for_user() {
     return 1
 }
 
+# Mark APT indexes as needing refresh
 mark_apt_indexes_stale() {
     rm -f "$APT_INDEXES_UPDATED_FLAG"
 }
 
+# Refresh APT package indexes (once per session)
 refresh_apt_indexes() {
     if [[ -f "$APT_INDEXES_UPDATED_FLAG" ]]; then
         return 0
@@ -185,6 +200,7 @@ refresh_apt_indexes() {
     touch "$APT_INDEXES_UPDATED_FLAG"
 }
 
+# Check if APT package is installed
 package_installed() {
     local package_name="$1"
 
@@ -194,6 +210,7 @@ package_installed() {
         grep -q "install ok installed"
 }
 
+# Install APT package with metrics tracking
 install_apt_package() {
     local package_name="$1"
     local skip_metrics="${2:-false}"
@@ -231,6 +248,7 @@ install_apt_package() {
     log_success "$package_name installed."
 }
 
+# Require specific CPU architecture (e.g., amd64)
 require_architecture() {
     local expected_arch="$1"
     local display_name="${2:-current module}"
@@ -246,10 +264,12 @@ require_architecture() {
     return 0
 }
 
+# Shorthand for require_architecture "amd64"
 require_amd64() {
     require_architecture "amd64" "${1:-This module}"
 }
 
+# Download file from URL using curl or wget
 download_file() {
     local url="$1"
     local output_path="$2"
@@ -282,6 +302,7 @@ download_file() {
     return 0
 }
 
+# Create temp directory with devforge prefix
 create_temp_dir() {
     local tmp_dir
     tmp_dir="$(mktemp -d -t devforge.XXXXXXXX)"
@@ -295,6 +316,7 @@ create_temp_dir() {
     return 0
 }
 
+# Safely remove devforge temp directory with multiple safety checks
 cleanup_temp_dir() {
     local tmp_dir="$1"
 
@@ -361,6 +383,7 @@ cleanup_temp_dir() {
     return 0
 }
 
+# Add APT repository with GPG key (supports binary, dearmor, ascii formats)
 ensure_apt_repository() {
     local key_url="$1"
     local keyring_file="$2"
@@ -484,6 +507,7 @@ ensure_apt_repository() {
     return 0
 }
 
+# Download and install .deb package from URL with verification
 install_deb_from_url() {
     local package_name="$1"
     local display_name="$2"
@@ -585,6 +609,7 @@ install_deb_from_url() {
     return 0
 }
 
+# Verify command exists and optionally check version
 verify_command() {
     local command_name="$1"
     local display_name="$2"
@@ -673,6 +698,7 @@ resolve_ubuntu_codename() {
 # Known valid Ubuntu codenames for Docker repository
 VALID_UBUNTU_CODENAMES=("focal" "jammy" "noble" "mantic" "lunar")
 
+# Check if codename is a known Ubuntu release
 is_valid_ubuntu_codename() {
     local codename="$1"
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-DEVFORGE_VERSION="1.0.0"
+DEVFORGE_VERSION="0.9.0"
 
 declare -a AVAILABLE_MODULES=(
     system

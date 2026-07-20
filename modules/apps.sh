@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
 
+# Apps module for DevForge
+# Installs desktop applications: VS Code, DBeaver, VLC, Spotify, etc.
+
+# Install VS Code from Microsoft repository
 install_vscode() {
     if command_exists code; then
         log_info "VS Code is already installed. Skipping."

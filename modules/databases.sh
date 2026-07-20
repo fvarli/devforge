@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # Databases module for DevForge
-# Installs MySQL, PostgreSQL, Redis, and SQLite
+# Installs MySQL, PostgreSQL, Redis, and SQLite with service management
 
 # Config defaults
 INSTALL_MYSQL="${INSTALL_MYSQL:-true}"

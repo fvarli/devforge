@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
 
+# Browsers module for DevForge
+# Installs Google Chrome and Brave Browser (amd64 only)
+
+# Install Google Chrome from official .deb
 install_google_chrome() {
     install_deb_from_url \
         "google-chrome-stable" \

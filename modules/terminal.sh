@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
 
+# Terminal module for DevForge
+# Installs modern shell tools: zsh, fzf, bat, eza, zoxide, starship
+
+# Install prerequisites for terminal module
 ensure_terminal_prerequisites() {
     local prerequisites=(
         ca-certificates
