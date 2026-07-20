@@ -52,12 +52,7 @@ install_flatpak_app() {
     # Check if already installed
     if flatpak_app_installed "$app_id"; then
         log_info "$app_name is already installed. Skipping."
-
-        # Record application skipped
-        if declare -F metrics_record_application_skipped >/dev/null 2>&1; then
-            metrics_record_application_skipped
-        fi
-
+        metrics_record_application_skipped
         return 0
     fi
 
@@ -74,11 +69,7 @@ install_flatpak_app() {
     fi
 
     log_success "$app_name installed"
-
-    # Record application installed
-    if declare -F metrics_record_application_installed >/dev/null 2>&1; then
-        metrics_record_application_installed
-    fi
+    metrics_record_application_installed
 
     return 0
 }

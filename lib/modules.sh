@@ -11,21 +11,12 @@ run_module() {
     if [[ ! -f "$module_file" ]]; then
         log_warning "Module file does not exist yet: $module_name"
         log_info "Skipping unfinished module."
-
-        # Record module skipped
-        if declare -F metrics_record_module_skipped >/dev/null 2>&1; then
-            metrics_record_module_skipped "$module_name"
-        fi
-
+        metrics_record_module_skipped "$module_name"
         return 0
     fi
 
     log_step "Running module: $module_name"
-
-    # Record module start time
-    if declare -F metrics_record_module_start >/dev/null 2>&1; then
-        metrics_record_module_start "$module_name"
-    fi
+    metrics_record_module_start "$module_name"
 
     # shellcheck source=/dev/null
     source "$module_file"
@@ -33,34 +24,20 @@ run_module() {
     if ! declare -F "$function_name" >/dev/null 2>&1; then
         log_error "Module function missing: $function_name"
         FAILED_MODULES+=("$module_name")
-
-        # Record module failed
-        if declare -F metrics_record_module_failed >/dev/null 2>&1; then
-            metrics_record_module_failed "$module_name"
-        fi
-
+        metrics_record_module_failed "$module_name"
         return 1
     fi
 
     if "$function_name"; then
         COMPLETED_MODULES+=("$module_name")
         log_success "Module completed: $module_name"
-
-        # Record module completed
-        if declare -F metrics_record_module_completed >/dev/null 2>&1; then
-            metrics_record_module_completed "$module_name"
-        fi
-
+        metrics_record_module_completed "$module_name"
         return 0
     fi
 
     FAILED_MODULES+=("$module_name")
     log_error "Module failed: $module_name"
-
-    # Record module failed
-    if declare -F metrics_record_module_failed >/dev/null 2>&1; then
-        metrics_record_module_failed "$module_name"
-    fi
+    metrics_record_module_failed "$module_name"
 
     return 1
 }
@@ -74,21 +51,19 @@ run_selected_modules() {
 }
 
 print_installation_summary() {
-    # Check if metrics available and enabled
-    if declare -F metrics_print_summary >/dev/null 2>&1; then
-        if [[ "$METRICS_ENABLED" == "true" ]]; then
-            metrics_print_summary
+    # Use metrics summary if enabled
+    if [[ "${METRICS_ENABLED:-false}" == "true" ]]; then
+        metrics_print_summary
 
-            # Return 1 if any failures
-            if [[ "${#FAILED_MODULES[@]}" -gt 0 ]]; then
-                return 1
-            fi
-
-            return 0
+        # Return 1 if any failures
+        if [[ "${#FAILED_MODULES[@]}" -gt 0 ]]; then
+            return 1
         fi
+
+        return 0
     fi
 
-    # Fallback to original summary if metrics not available
+    # Fallback to original summary if metrics not enabled
     local module_name
 
     printf "\n"

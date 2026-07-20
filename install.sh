@@ -96,17 +96,9 @@ main() {
     print_selected_modules
     confirm_installation
 
-    # Start metrics tracking
-    if declare -F metrics_start >/dev/null 2>&1; then
-        metrics_start
-    fi
-
+    metrics_start
     run_selected_modules
-
-    # Finish metrics tracking
-    if declare -F metrics_finish >/dev/null 2>&1; then
-        metrics_finish
-    fi
+    metrics_finish
 
     # Capture summary exit code
     local summary_exit_code=0

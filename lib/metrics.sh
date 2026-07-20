@@ -183,6 +183,16 @@ metrics_record_application_skipped() {
     metrics_increment applications_skipped
 }
 
+# Record warning
+metrics_record_warning() {
+    metrics_increment warnings
+}
+
+# Record error
+metrics_record_error() {
+    metrics_increment errors
+}
+
 # Format elapsed time as human-readable string
 format_elapsed_time() {
     local total_seconds="$1"

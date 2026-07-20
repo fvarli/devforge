@@ -170,12 +170,12 @@ package_installed() {
 
 install_apt_package() {
     local package_name="$1"
+    local skip_metrics="${2:-false}"
 
     if package_installed "$package_name"; then
         log_info "$package_name is already installed. Skipping."
 
-        # Record package skipped
-        if declare -F metrics_record_package_skipped >/dev/null 2>&1; then
+        if [[ "$skip_metrics" != "true" ]]; then
             metrics_record_package_skipped
         fi
 
@@ -198,8 +198,7 @@ install_apt_package() {
         return 1
     fi
 
-    # Record package installed
-    if declare -F metrics_record_package_installed >/dev/null 2>&1; then
+    if [[ "$skip_metrics" != "true" ]]; then
         metrics_record_package_installed
     fi
 
@@ -486,12 +485,7 @@ install_deb_from_url() {
     # Check if already installed
     if package_installed "$package_name" && command_exists "$verify_command"; then
         log_info "$display_name is already installed. Skipping."
-
-        # Record application skipped (DEB installations count as applications)
-        if declare -F metrics_record_application_skipped >/dev/null 2>&1; then
-            metrics_record_application_skipped
-        fi
-
+        metrics_record_application_skipped
         return 0
     fi
 
@@ -560,11 +554,7 @@ install_deb_from_url() {
     fi
 
     log_success "$display_name installed"
-
-    # Record application installed (DEB installations count as applications)
-    if declare -F metrics_record_application_installed >/dev/null 2>&1; then
-        metrics_record_application_installed
-    fi
+    metrics_record_application_installed
 
     return 0
 }
