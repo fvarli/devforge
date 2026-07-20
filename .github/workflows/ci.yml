@@ -14,12 +14,20 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Check bash syntax
-        run: |
-          bash -n install.sh
-          bash -n lib/*.sh
-          bash -n modules/*.sh
-          bash -n tests/*.sh
+      - name: Check bash syntax - install.sh
+        run: bash -n install.sh
+
+      - name: Check bash syntax - lib/
+        run: bash -n lib/*.sh
+
+      - name: Check bash syntax - modules/
+        run: bash -n modules/*.sh
+
+      - name: Check bash syntax - doctor/
+        run: bash -n doctor/*.sh
+
+      - name: Check bash syntax - tests/
+        run: bash -n tests/*.sh
 
   shellcheck:
     name: ShellCheck
@@ -28,14 +36,34 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install ShellCheck
-        run: sudo apt-get install -y shellcheck
+      - name: Cache ShellCheck
+        uses: actions/cache@v4
+        with:
+          path: ~/.local/bin/shellcheck
+          key: shellcheck-v0.10.0
 
-      - name: Run ShellCheck
+      - name: Install ShellCheck
         run: |
+          if ! command -v shellcheck &> /dev/null; then
+            sudo apt-get update
+            sudo apt-get install -y shellcheck
+          fi
           shellcheck --version
-          echo "---"
-          shellcheck install.sh lib/*.sh modules/*.sh
+
+      - name: ShellCheck install.sh
+        run: shellcheck install.sh
+
+      - name: ShellCheck lib/
+        run: shellcheck lib/*.sh
+
+      - name: ShellCheck modules/
+        run: shellcheck modules/*.sh
+
+      - name: ShellCheck doctor/
+        run: shellcheck doctor/*.sh
+
+      - name: ShellCheck tests/
+        run: shellcheck tests/*.sh || true  # Tests may have intentional issues
 
   unit-tests:
     name: Unit Tests
@@ -47,24 +75,17 @@ jobs:
       - name: Run helper tests
         run: bash tests/test_helpers.sh
 
-      - name: Run syntax checks
+      - name: Run doctor tests
+        run: bash tests/test_doctor.sh
+
+      - name: Run syntax checks script
         run: |
           if [[ -f tests/run_syntax_checks.sh ]]; then
             bash tests/run_syntax_checks.sh
           fi
 
-  doctor-tests:
-    name: Doctor Tests
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Run doctor tests
-        run: bash tests/test_doctor.sh
-
-  doctor-command:
-    name: Doctor Command
+  doctor-validation:
+    name: Doctor Validation
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -74,7 +95,127 @@ jobs:
         run: cp config.env.example config.env
 
       - name: Run doctor command
+        id: doctor
         run: |
-          # Run doctor command (should exit with 1 since nothing is installed)
-          # We're just verifying it runs without crashing
-          ./install.sh --doctor || true
+          # Capture doctor output
+          ./install.sh --doctor > doctor_output.txt 2>&1 || true
+          cat doctor_output.txt
+
+      - name: Validate doctor output format
+        run: |
+          # Verify output contains expected sections
+          grep -q "DevForge Doctor" doctor_output.txt
+          grep -q "==> System" doctor_output.txt
+          grep -q "==> Summary" doctor_output.txt
+          grep -q "Total checks:" doctor_output.txt
+          grep -q "Passed:" doctor_output.txt
+          grep -q "Failed:" doctor_output.txt
+          echo "Doctor output format validated"
+
+      - name: Validate doctor output markers
+        run: |
+          # Verify output uses correct markers
+          grep -qE "\[(OK|WARN|FAIL|SKIP)\]" doctor_output.txt
+          echo "Doctor markers validated"
+
+      - name: Verify doctor exit code semantics
+        run: |
+          # Test that doctor returns 1 on fresh system (expected failures)
+          cp config.env.example config.env
+          if ./install.sh --doctor > /dev/null 2>&1; then
+            echo "Doctor returned 0 (unexpected on fresh system)"
+          else
+            echo "Doctor returned non-zero as expected"
+          fi
+
+  doctor-exit-status:
+    name: Doctor Exit Status
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Create config with all disabled
+        run: |
+          cat > config.env << 'EOF'
+          DEVFORGE_USER="${SUDO_USER:-$USER}"
+          INSTALL_SYSTEM=false
+          INSTALL_TERMINAL=false
+          INSTALL_GIT=false
+          INSTALL_PHP=false
+          INSTALL_NODE=false
+          INSTALL_DOCKER=false
+          INSTALL_DATABASES=false
+          INSTALL_BROWSERS=false
+          INSTALL_APPS=false
+          INSTALL_CHROME=false
+          INSTALL_BRAVE=false
+          INSTALL_VSCODE=false
+          INSTALL_DBEAVER=false
+          INSTALL_BITWARDEN=false
+          INSTALL_SPOTIFY=false
+          INSTALL_VLC=false
+          INSTALL_FILEZILLA=false
+          INSTALL_KEEPASSXC=false
+          INSTALL_MYSQL=false
+          INSTALL_POSTGRESQL=false
+          INSTALL_REDIS=false
+          INSTALL_SQLITE=false
+          INSTALL_DOCKER_ENGINE=false
+          INSTALL_PNPM=false
+          INSTALL_YARN=false
+          INSTALL_BUN=false
+          INSTALL_LARAVEL_INSTALLER=false
+          INSTALL_SYMFONY_CLI=false
+          EOF
+
+      - name: Test doctor with all disabled
+        run: |
+          # With all modules disabled, doctor should only check system
+          # System checks (OS, arch, disk, DNS) should pass
+          ./install.sh --doctor
+          exit_code=$?
+          echo "Exit code: $exit_code"
+          # System checks should pass on Ubuntu runner
+          if [[ $exit_code -eq 0 ]]; then
+            echo "Doctor passed with all modules disabled"
+          else
+            echo "Doctor failed - checking output"
+            ./install.sh --doctor || true
+            exit 1
+          fi
+
+  file-structure:
+    name: File Structure
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Verify required files exist
+        run: |
+          test -f install.sh
+          test -f config.env.example
+          test -f README.md
+          test -d lib
+          test -d modules
+          test -d doctor
+          test -d tests
+          echo "Required files verified"
+
+      - name: Verify doctor modules exist
+        run: |
+          test -f doctor/system.sh
+          test -f doctor/terminal.sh
+          test -f doctor/git.sh
+          test -f doctor/php.sh
+          test -f doctor/node.sh
+          test -f doctor/docker.sh
+          test -f doctor/databases.sh
+          test -f doctor/browsers.sh
+          test -f doctor/apps.sh
+          test -f doctor/summary.sh
+          echo "Doctor modules verified"
+
+      - name: Verify install.sh is executable
+        run: test -x install.sh

@@ -162,29 +162,7 @@ enable_docker_service() {
     fi
 
     log_info "Enabling Docker service..."
-
-    # Strict systemctl requirement - Docker requires systemd
-    if ! command_exists systemctl; then
-        log_error "systemctl required for Docker service management"
-        log_error "Docker requires systemd-based init system"
-        return 1
-    fi
-
-    # Atomic enable and start with --now
-    if ! systemctl enable --now docker; then
-        log_error "Failed to enable and start Docker service"
-        return 1
-    fi
-
-    # Verify service is actually running
-    if ! systemctl is-active --quiet docker; then
-        log_error "Docker service failed to start"
-        log_error "Check: journalctl -u docker.service"
-        return 1
-    fi
-
-    log_success "Docker service enabled and running"
-    return 0
+    enable_systemd_service "docker" "Docker"
 }
 
 configure_docker_group() {

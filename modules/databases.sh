@@ -145,30 +145,8 @@ install_sqlite() {
 
 enable_database_service() {
     local service_name="$1"
-
     log_info "Enabling $service_name service..."
-
-    # Strict systemctl requirement
-    if ! command_exists systemctl; then
-        log_error "systemctl required for service management"
-        return 1
-    fi
-
-    # Atomic enable and start
-    if ! systemctl enable --now "$service_name"; then
-        log_error "Failed to enable and start $service_name service"
-        return 1
-    fi
-
-    # Verify service is running
-    if ! systemctl is-active --quiet "$service_name"; then
-        log_error "$service_name service failed to start"
-        log_error "Check: journalctl -u $service_name.service"
-        return 1
-    fi
-
-    log_success "$service_name service enabled and running"
-    return 0
+    enable_systemd_service "$service_name"
 }
 
 verify_mysql() {

@@ -24,6 +24,32 @@ require_root() {
     fi
 }
 
+# Enable and start a systemd service
+# Usage: enable_systemd_service "service_name" ["display_name"]
+enable_systemd_service() {
+    local service_name="$1"
+    local display_name="${2:-$service_name}"
+
+    if ! command_exists systemctl; then
+        log_error "systemctl required for $display_name service management"
+        return 1
+    fi
+
+    if ! systemctl enable --now "$service_name"; then
+        log_error "Failed to enable and start $display_name service"
+        return 1
+    fi
+
+    if ! systemctl is-active --quiet "$service_name"; then
+        log_error "$display_name service failed to start"
+        log_error "Check: journalctl -u $service_name.service"
+        return 1
+    fi
+
+    log_success "$display_name service enabled and running"
+    return 0
+}
+
 get_target_user() {
     local sudo_user="${SUDO_USER:-}"
 
