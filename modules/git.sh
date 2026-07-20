@@ -86,9 +86,7 @@ setup_ssh_directory() {
 }
 
 setup_git_config() {
-    local target_user
     local target_home
-    target_user="$(get_target_user)"
     target_home="$(get_target_home)"
 
     local git_config="$target_home/.gitconfig"

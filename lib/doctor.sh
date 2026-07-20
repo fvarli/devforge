@@ -15,63 +15,64 @@ DOCTOR_CHECKS_FAILED=0
 # Doctor output functions
 # Safe counter increment (avoids set -e issues when counter is 0)
 doctor_pass() {
-    printf "${COLOR_GREEN}[OK]${COLOR_RESET} %s\n" "$*"
+    printf "%s[OK]%s %s\n" "$COLOR_GREEN" "$COLOR_RESET" "$*"
     DOCTOR_CHECKS_TOTAL=$((DOCTOR_CHECKS_TOTAL + 1))
     DOCTOR_CHECKS_PASSED=$((DOCTOR_CHECKS_PASSED + 1))
 }
 
 doctor_warn() {
-    printf "${COLOR_YELLOW}[WARN]${COLOR_RESET} %s\n" "$*"
+    printf "%s[WARN]%s %s\n" "$COLOR_YELLOW" "$COLOR_RESET" "$*"
     DOCTOR_CHECKS_TOTAL=$((DOCTOR_CHECKS_TOTAL + 1))
     DOCTOR_CHECKS_WARNINGS=$((DOCTOR_CHECKS_WARNINGS + 1))
 }
 
 doctor_fail() {
-    printf "${COLOR_RED}[FAIL]${COLOR_RESET} %s\n" "$*"
+    printf "%s[FAIL]%s %s\n" "$COLOR_RED" "$COLOR_RESET" "$*"
     DOCTOR_CHECKS_TOTAL=$((DOCTOR_CHECKS_TOTAL + 1))
     DOCTOR_CHECKS_FAILED=$((DOCTOR_CHECKS_FAILED + 1))
 }
 
 doctor_skip() {
-    printf "${COLOR_BLUE}[SKIP]${COLOR_RESET} %s\n" "$*"
+    printf "%s[SKIP]%s %s\n" "$COLOR_BLUE" "$COLOR_RESET" "$*"
 }
 
 doctor_section() {
-    printf "\n${COLOR_CYAN}==> %s${COLOR_RESET}\n" "$*"
+    printf "\n%s==> %s%s\n" "$COLOR_CYAN" "$*" "$COLOR_RESET"
 }
 
 # Source modular check files
-# shellcheck source=../doctor/system.sh
+# shellcheck source=doctor/system.sh
 source "$DEVFORGE_ROOT/doctor/system.sh"
 
-# shellcheck source=../doctor/terminal.sh
+# shellcheck source=doctor/terminal.sh
 source "$DEVFORGE_ROOT/doctor/terminal.sh"
 
-# shellcheck source=../doctor/git.sh
+# shellcheck source=doctor/git.sh
 source "$DEVFORGE_ROOT/doctor/git.sh"
 
-# shellcheck source=../doctor/php.sh
+# shellcheck source=doctor/php.sh
 source "$DEVFORGE_ROOT/doctor/php.sh"
 
-# shellcheck source=../doctor/node.sh
+# shellcheck source=doctor/node.sh
 source "$DEVFORGE_ROOT/doctor/node.sh"
 
-# shellcheck source=../doctor/docker.sh
+# shellcheck source=doctor/docker.sh
 source "$DEVFORGE_ROOT/doctor/docker.sh"
 
-# shellcheck source=../doctor/databases.sh
+# shellcheck source=doctor/databases.sh
 source "$DEVFORGE_ROOT/doctor/databases.sh"
 
-# shellcheck source=../doctor/browsers.sh
+# shellcheck source=doctor/browsers.sh
 source "$DEVFORGE_ROOT/doctor/browsers.sh"
 
-# shellcheck source=../doctor/apps.sh
+# shellcheck source=doctor/apps.sh
 source "$DEVFORGE_ROOT/doctor/apps.sh"
 
-# shellcheck source=../doctor/summary.sh
+# shellcheck source=doctor/summary.sh
 source "$DEVFORGE_ROOT/doctor/summary.sh"
 
 # Main doctor function
+# shellcheck disable=SC2120  # $1 is optional, defaults to --all behavior
 run_doctor() {
     local check_all=false
     local modules_to_check=()
@@ -85,7 +86,7 @@ run_doctor() {
         check_all=true
     fi
 
-    printf "${COLOR_CYAN}DevForge Doctor${COLOR_RESET}\n"
+    printf "%sDevForge Doctor%s\n" "$COLOR_CYAN" "$COLOR_RESET"
     printf "Running diagnostic checks...\n"
 
     # Reset counters

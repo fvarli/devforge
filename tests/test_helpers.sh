@@ -8,13 +8,13 @@ set -Eeu
 DEVFORGE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 export DEVFORGE_ROOT
 
-# shellcheck source=../lib/logging.sh
+# shellcheck source=lib/logging.sh
 source "$DEVFORGE_ROOT/lib/logging.sh"
 
-# shellcheck source=../lib/helpers.sh
+# shellcheck source=lib/helpers.sh
 source "$DEVFORGE_ROOT/lib/helpers.sh"
 
-# shellcheck source=../lib/metrics.sh
+# shellcheck source=lib/metrics.sh
 source "$DEVFORGE_ROOT/lib/metrics.sh"
 
 # Test counters

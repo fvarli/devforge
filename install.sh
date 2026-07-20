@@ -89,6 +89,7 @@ main() {
     # Doctor mode - does NOT require root
     if [[ "$RUN_DOCTOR" == "true" ]]; then
         load_configuration
+        # shellcheck disable=SC2119  # run_doctor handles missing $1 gracefully
         if run_doctor; then
             exit 0
         else

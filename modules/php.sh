@@ -448,7 +448,6 @@ install_symfony_cli() {
     fi
 
     local installer_path="$tmp_dir/symfony-installer"
-    local symfony_binary="$tmp_dir/symfony"
 
     # Download Symfony CLI installer
     if ! download_file "https://get.symfony.com/cli/installer" "$installer_path"; then

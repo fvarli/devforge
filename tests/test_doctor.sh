@@ -8,13 +8,13 @@ set -Eeu
 DEVFORGE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 export DEVFORGE_ROOT
 
-# shellcheck source=../lib/logging.sh
+# shellcheck source=lib/logging.sh
 source "$DEVFORGE_ROOT/lib/logging.sh"
 
-# shellcheck source=../lib/helpers.sh
+# shellcheck source=lib/helpers.sh
 source "$DEVFORGE_ROOT/lib/helpers.sh"
 
-# shellcheck source=../lib/doctor.sh
+# shellcheck source=lib/doctor.sh
 source "$DEVFORGE_ROOT/lib/doctor.sh"
 
 # Test counters
@@ -365,7 +365,7 @@ test_doctor_health_score() {
     log_step "Testing doctor health score calculation"
 
     # Source summary.sh if not already loaded
-    # shellcheck source=../doctor/summary.sh
+    # shellcheck source=doctor/summary.sh
     if ! declare -f doctor_print_summary >/dev/null 2>&1; then
         source "$DEVFORGE_ROOT/doctor/summary.sh"
     fi

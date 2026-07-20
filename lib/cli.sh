@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
 
+# CLI state variables used by install.sh after sourcing this file
+# shellcheck disable=SC2034
 DEVFORGE_VERSION="0.9.0"
 
+# shellcheck disable=SC2034
 declare -a AVAILABLE_MODULES=(
     system
     terminal
@@ -14,12 +17,18 @@ declare -a AVAILABLE_MODULES=(
     apps
 )
 
+# shellcheck disable=SC2034
 declare -a SELECTED_MODULES=()
 
+# shellcheck disable=SC2034
 SHOW_HELP=false
+# shellcheck disable=SC2034
 SHOW_VERSION=false
+# shellcheck disable=SC2034
 INSTALL_ALL=false
+# shellcheck disable=SC2034
 INTERACTIVE_MODE=false
+# shellcheck disable=SC2034
 RUN_DOCTOR=false
 
 print_help() {

@@ -90,6 +90,8 @@ configure_starship() {
     target_home="$(get_target_home)"
 
     local zshrc="$target_home/.zshrc"
+    # Intentional literal shell config - expanded when user sources it
+    # shellcheck disable=SC2016
     local starship_init='eval "$(starship init zsh)"'
 
     add_line_to_file_idempotent "$zshrc" "$starship_init"
@@ -171,9 +173,7 @@ install_zoxide() {
 
     log_warning "zoxide not available in APT, using official installer..."
 
-    local target_user
     local target_home
-    target_user="$(get_target_user)"
     target_home="$(get_target_home)"
 
     local tmp_dir
@@ -211,6 +211,8 @@ configure_zoxide() {
     target_home="$(get_target_home)"
 
     local zshrc="$target_home/.zshrc"
+    # Intentional literal shell config - expanded when user sources it
+    # shellcheck disable=SC2016
     local zoxide_init='eval "$(zoxide init zsh)"'
 
     add_line_to_file_idempotent "$zshrc" "$zoxide_init"

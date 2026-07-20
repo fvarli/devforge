@@ -127,7 +127,8 @@ metrics_record_module_completed() {
     # Calculate elapsed time if start time recorded
     if [[ -n "${METRICS_MODULE_START_TIMES[$module_name]:-}" ]]; then
         local start_time="${METRICS_MODULE_START_TIMES[$module_name]}"
-        local end_time=$(date +%s)
+        local end_time
+        end_time="$(date +%s)"
         local elapsed=$((end_time - start_time))
         METRICS_MODULE_ELAPSED_TIMES["$module_name"]=$elapsed
     fi
@@ -146,7 +147,8 @@ metrics_record_module_failed() {
     # Calculate elapsed time if start time recorded
     if [[ -n "${METRICS_MODULE_START_TIMES[$module_name]:-}" ]]; then
         local start_time="${METRICS_MODULE_START_TIMES[$module_name]}"
-        local end_time=$(date +%s)
+        local end_time
+        end_time="$(date +%s)"
         local elapsed=$((end_time - start_time))
         METRICS_MODULE_ELAPSED_TIMES["$module_name"]=$elapsed
     fi

@@ -154,6 +154,8 @@ configure_nvm_shell() {
     local target_home
     target_home="$(get_target_home)"
 
+    # Intentional literal shell config - expanded when user sources it
+    # shellcheck disable=SC2016
     local nvm_config='
 export NVM_DIR="$HOME/.nvm"
 [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
@@ -439,6 +441,8 @@ configure_bun_path() {
     local target_home
     target_home="$(get_target_home)"
 
+    # Intentional literal shell config - expanded when user sources it
+    # shellcheck disable=SC2016
     local bun_config='
 export BUN_INSTALL="$HOME/.bun"
 export PATH="$BUN_INSTALL/bin:$PATH"'
