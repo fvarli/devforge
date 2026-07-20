@@ -97,23 +97,27 @@ main() {
     confirm_installation
 
     metrics_start
-    run_selected_modules
+
+    # Run modules - capture result without triggering ERR trap
+    local modules_status=0
+    run_selected_modules || modules_status=$?
+
+    # Always finalize metrics after module execution
     metrics_finish
 
-    # Capture summary exit code
-    local summary_exit_code=0
-    if ! print_installation_summary; then
-        summary_exit_code=1
-    fi
+    # Always print summary
+    print_installation_summary
 
-    # Only print success if summary succeeded
-    if [[ $summary_exit_code -eq 0 ]]; then
+    # Determine final status based on module results
+    if [[ $modules_status -eq 0 ]] && [[ "${#FAILED_MODULES[@]}" -eq 0 ]]; then
         printf "\n"
         log_success "DevForge completed successfully."
+        return 0
     fi
 
-    # Exit with proper code
-    exit $summary_exit_code
+    return 1
 }
 
+# Run main and exit with its status
 main "$@"
+exit $?

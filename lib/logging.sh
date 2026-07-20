@@ -50,3 +50,16 @@ die() {
     log_error "$*"
     exit 1
 }
+
+# Non-counting render helpers for summary output (do not increment metrics)
+render_success() {
+    printf "${COLOR_GREEN}✓${COLOR_RESET} %s\n" "$*"
+}
+
+render_error() {
+    printf "${COLOR_RED}✗${COLOR_RESET} %s\n" "$*"
+}
+
+render_warning() {
+    printf "${COLOR_YELLOW}⚠${COLOR_RESET} %s\n" "$*"
+}

@@ -71,12 +71,12 @@ check_bash_syntax() {
 
     if bash -n "$file" 2>/dev/null; then
         log_success "bash -n: $relative_path"
-        ((BASH_SYNTAX_PASSED++))
+        BASH_SYNTAX_PASSED=$((BASH_SYNTAX_PASSED + 1))
         return 0
     else
         log_error "bash -n: $relative_path"
         bash -n "$file" 2>&1 | sed 's/^/    /' >&2
-        ((BASH_SYNTAX_FAILED++))
+        BASH_SYNTAX_FAILED=$((BASH_SYNTAX_FAILED + 1))
         return 1
     fi
 }
@@ -92,12 +92,12 @@ check_shellcheck() {
 
     if shellcheck "$file" 2>/dev/null; then
         log_success "shellcheck: $relative_path"
-        ((SHELLCHECK_PASSED++))
+        SHELLCHECK_PASSED=$((SHELLCHECK_PASSED + 1))
         return 0
     else
         log_error "shellcheck: $relative_path"
         shellcheck "$file" 2>&1 | sed 's/^/    /' >&2
-        ((SHELLCHECK_FAILED++))
+        SHELLCHECK_FAILED=$((SHELLCHECK_FAILED + 1))
         return 1
     fi
 }

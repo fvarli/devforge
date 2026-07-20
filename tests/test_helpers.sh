@@ -11,6 +11,9 @@ export DEVFORGE_ROOT
 # shellcheck source=../lib/logging.sh
 source "$DEVFORGE_ROOT/lib/logging.sh"
 
+# shellcheck source=../lib/helpers.sh
+source "$DEVFORGE_ROOT/lib/helpers.sh"
+
 # shellcheck source=../lib/metrics.sh
 source "$DEVFORGE_ROOT/lib/metrics.sh"
 
@@ -19,20 +22,33 @@ TESTS_RUN=0
 TESTS_PASSED=0
 TESTS_FAILED=0
 
-# Test helpers
+# Safe counter increment (avoids set -e issues with post-increment from 0)
+increment_tests_run() {
+    TESTS_RUN=$((TESTS_RUN + 1))
+}
+
+increment_tests_passed() {
+    TESTS_PASSED=$((TESTS_PASSED + 1))
+}
+
+increment_tests_failed() {
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+}
+
+# Core assertion: compare two values
 assert_equals() {
     local expected="$1"
     local actual="$2"
     local test_name="${3:-Test}"
 
-    ((TESTS_RUN++))
+    increment_tests_run
 
     if [[ "$expected" == "$actual" ]]; then
-        ((TESTS_PASSED++))
+        increment_tests_passed
         log_success "$test_name"
         return 0
     else
-        ((TESTS_FAILED++))
+        increment_tests_failed
         log_error "$test_name"
         log_error "  Expected: $expected"
         log_error "  Actual:   $actual"
@@ -40,39 +56,41 @@ assert_equals() {
     fi
 }
 
-assert_true() {
-    local condition="$1"
-    local test_name="${2:-Test}"
+# Assert a command succeeds (exit code 0)
+assert_command_succeeds() {
+    local test_name="$1"
+    shift
 
-    ((TESTS_RUN++))
+    increment_tests_run
 
-    if eval "$condition"; then
-        ((TESTS_PASSED++))
+    if "$@" >/dev/null 2>&1; then
+        increment_tests_passed
         log_success "$test_name"
         return 0
     else
-        ((TESTS_FAILED++))
+        increment_tests_failed
         log_error "$test_name"
-        log_error "  Condition failed: $condition"
+        log_error "  Command failed: $*"
         return 1
     fi
 }
 
-assert_false() {
-    local condition="$1"
-    local test_name="${2:-Test}"
+# Assert a command fails (exit code non-zero)
+assert_command_fails() {
+    local test_name="$1"
+    shift
 
-    ((TESTS_RUN++))
+    increment_tests_run
 
-    if ! eval "$condition"; then
-        ((TESTS_PASSED++))
+    if "$@" >/dev/null 2>&1; then
+        increment_tests_failed
+        log_error "$test_name"
+        log_error "  Command should have failed: $*"
+        return 1
+    else
+        increment_tests_passed
         log_success "$test_name"
         return 0
-    else
-        ((TESTS_FAILED++))
-        log_error "$test_name"
-        log_error "  Condition should have failed: $condition"
-        return 1
     fi
 }
 
@@ -81,26 +99,26 @@ test_format_elapsed_time() {
     log_step "Testing format_elapsed_time"
 
     # Seconds only
-    assert_equals "0s" "$(format_elapsed_time 0)" "format_elapsed_time: 0 seconds"
-    assert_equals "1s" "$(format_elapsed_time 1)" "format_elapsed_time: 1 second"
-    assert_equals "42s" "$(format_elapsed_time 42)" "format_elapsed_time: 42 seconds"
-    assert_equals "59s" "$(format_elapsed_time 59)" "format_elapsed_time: 59 seconds"
+    assert_equals "0s" "$(format_elapsed_time 0)" "format_elapsed_time: 0 seconds" || true
+    assert_equals "1s" "$(format_elapsed_time 1)" "format_elapsed_time: 1 second" || true
+    assert_equals "42s" "$(format_elapsed_time 42)" "format_elapsed_time: 42 seconds" || true
+    assert_equals "59s" "$(format_elapsed_time 59)" "format_elapsed_time: 59 seconds" || true
 
     # Minutes and seconds
-    assert_equals "1m 0s" "$(format_elapsed_time 60)" "format_elapsed_time: 1 minute"
-    assert_equals "1m 5s" "$(format_elapsed_time 65)" "format_elapsed_time: 1m 5s"
-    assert_equals "3m 12s" "$(format_elapsed_time 192)" "format_elapsed_time: 3m 12s"
-    assert_equals "59m 59s" "$(format_elapsed_time 3599)" "format_elapsed_time: 59m 59s"
+    assert_equals "1m 0s" "$(format_elapsed_time 60)" "format_elapsed_time: 1 minute" || true
+    assert_equals "1m 5s" "$(format_elapsed_time 65)" "format_elapsed_time: 1m 5s" || true
+    assert_equals "3m 12s" "$(format_elapsed_time 192)" "format_elapsed_time: 3m 12s" || true
+    assert_equals "59m 59s" "$(format_elapsed_time 3599)" "format_elapsed_time: 59m 59s" || true
 
     # Hours, minutes, and seconds
-    assert_equals "1h 0m 0s" "$(format_elapsed_time 3600)" "format_elapsed_time: 1 hour"
-    assert_equals "1h 0m 1s" "$(format_elapsed_time 3601)" "format_elapsed_time: 1h 0m 1s"
-    assert_equals "1h 4m 9s" "$(format_elapsed_time 3849)" "format_elapsed_time: 1h 4m 9s"
-    assert_equals "2h 30m 45s" "$(format_elapsed_time 9045)" "format_elapsed_time: 2h 30m 45s"
-    assert_equals "24h 0m 0s" "$(format_elapsed_time 86400)" "format_elapsed_time: 24 hours"
+    assert_equals "1h 0m 0s" "$(format_elapsed_time 3600)" "format_elapsed_time: 1 hour" || true
+    assert_equals "1h 0m 1s" "$(format_elapsed_time 3601)" "format_elapsed_time: 1h 0m 1s" || true
+    assert_equals "1h 4m 9s" "$(format_elapsed_time 3849)" "format_elapsed_time: 1h 4m 9s" || true
+    assert_equals "2h 30m 45s" "$(format_elapsed_time 9045)" "format_elapsed_time: 2h 30m 45s" || true
+    assert_equals "24h 0m 0s" "$(format_elapsed_time 86400)" "format_elapsed_time: 24 hours" || true
 }
 
-# Test metrics counters
+# Test metrics counters increment from zero safely
 test_metrics_counters() {
     log_step "Testing metrics counters"
 
@@ -108,65 +126,146 @@ test_metrics_counters() {
     metrics_start
 
     # Test initial values
-    assert_equals "0" "$METRICS_PACKAGES_INSTALLED" "Initial packages_installed is 0"
-    assert_equals "0" "$METRICS_PACKAGES_SKIPPED" "Initial packages_skipped is 0"
-    assert_equals "0" "$METRICS_APPLICATIONS_INSTALLED" "Initial applications_installed is 0"
-    assert_equals "0" "$METRICS_APPLICATIONS_SKIPPED" "Initial applications_skipped is 0"
-    assert_equals "0" "$METRICS_WARNINGS" "Initial warnings is 0"
-    assert_equals "0" "$METRICS_ERRORS" "Initial errors is 0"
+    assert_equals "0" "$METRICS_PACKAGES_INSTALLED" "Initial packages_installed is 0" || true
+    assert_equals "0" "$METRICS_PACKAGES_SKIPPED" "Initial packages_skipped is 0" || true
+    assert_equals "0" "$METRICS_APPLICATIONS_INSTALLED" "Initial applications_installed is 0" || true
+    assert_equals "0" "$METRICS_APPLICATIONS_SKIPPED" "Initial applications_skipped is 0" || true
+    assert_equals "0" "$METRICS_WARNINGS" "Initial warnings is 0" || true
+    assert_equals "0" "$METRICS_ERRORS" "Initial errors is 0" || true
 
-    # Test increments
+    # Test increments from zero (critical test for set -e safety)
     metrics_record_package_installed
-    assert_equals "1" "$METRICS_PACKAGES_INSTALLED" "After 1 package installed"
+    assert_equals "1" "$METRICS_PACKAGES_INSTALLED" "After 1 package installed" || true
 
     metrics_record_package_installed
     metrics_record_package_installed
-    assert_equals "3" "$METRICS_PACKAGES_INSTALLED" "After 3 packages installed"
+    assert_equals "3" "$METRICS_PACKAGES_INSTALLED" "After 3 packages installed" || true
 
     metrics_record_package_skipped
-    assert_equals "1" "$METRICS_PACKAGES_SKIPPED" "After 1 package skipped"
+    assert_equals "1" "$METRICS_PACKAGES_SKIPPED" "After 1 package skipped" || true
 
     metrics_record_application_installed
-    assert_equals "1" "$METRICS_APPLICATIONS_INSTALLED" "After 1 application installed"
+    assert_equals "1" "$METRICS_APPLICATIONS_INSTALLED" "After 1 application installed" || true
 
     metrics_record_application_skipped
-    assert_equals "1" "$METRICS_APPLICATIONS_SKIPPED" "After 1 application skipped"
+    assert_equals "1" "$METRICS_APPLICATIONS_SKIPPED" "After 1 application skipped" || true
 
+    # Direct increment API
     metrics_increment warnings
-    assert_equals "1" "$METRICS_WARNINGS" "After 1 warning"
+    assert_equals "1" "$METRICS_WARNINGS" "After 1 warning" || true
 
     metrics_increment errors
-    assert_equals "1" "$METRICS_ERRORS" "After 1 error"
+    assert_equals "1" "$METRICS_ERRORS" "After 1 error" || true
 }
 
-# Test temp path validation (from cleanup_temp_dir)
-test_temp_path_validation() {
-    log_step "Testing temp path validation patterns"
+# Test that summary printing does not change counters
+test_summary_does_not_change_counters() {
+    log_step "Testing summary does not change counters"
 
-    # These are logical tests, not actual cleanup_temp_dir calls
-    # We're testing the validation logic patterns
+    # Initialize and set some counts
+    metrics_start
+    metrics_record_package_installed
+    metrics_record_package_installed
+    metrics_record_warning
+    metrics_record_error
+    metrics_finish
 
-    # Absolute vs relative
-    assert_true '[[ "/tmp/devforge.XXXXXX" == /* ]]' "Absolute path starts with /"
-    assert_false '[[ "tmp/devforge.XXXXXX" == /* ]]' "Relative path does not start with /"
+    # Capture counters before summary
+    local packages_before="$METRICS_PACKAGES_INSTALLED"
+    local warnings_before="$METRICS_WARNINGS"
+    local errors_before="$METRICS_ERRORS"
 
-    # Dangerous literal paths
-    assert_true '[[ "/" == "/" ]]' "Root is detected"
-    assert_true '[[ "/tmp" == "/tmp" ]]' "System /tmp is detected"
-    assert_true '[[ "$HOME" == "$HOME" ]]' "HOME is detected"
+    # Print summary (suppress output)
+    metrics_print_summary >/dev/null 2>&1
 
-    # DevForge prefix
-    assert_true '[[ "devforge.XXXXXX" == devforge.* ]]' "DevForge prefix matches"
-    assert_false '[[ "something.XXXXXX" == devforge.* ]]' "Non-DevForge prefix does not match"
+    # Verify counters unchanged
+    assert_equals "$packages_before" "$METRICS_PACKAGES_INSTALLED" "Packages unchanged after summary" || true
+    assert_equals "$warnings_before" "$METRICS_WARNINGS" "Warnings unchanged after summary" || true
+    assert_equals "$errors_before" "$METRICS_ERRORS" "Errors unchanged after summary" || true
 
-    # Under system temp
-    local test_path="/tmp/devforge.XXXXXX"
-    local system_tmp="${TMPDIR:-/tmp}"
-    system_tmp="${system_tmp%/}"
-    assert_true '[[ "$test_path" == "$system_tmp"/* ]]' "Path under system temp"
+    # Print summary again
+    metrics_print_summary >/dev/null 2>&1
 
-    local outside_path="/var/devforge.XXXXXX"
-    assert_false '[[ "$outside_path" == "$system_tmp"/* ]]' "Path outside system temp"
+    # Still unchanged
+    assert_equals "$packages_before" "$METRICS_PACKAGES_INSTALLED" "Packages unchanged after second summary" || true
+    assert_equals "$warnings_before" "$METRICS_WARNINGS" "Warnings unchanged after second summary" || true
+    assert_equals "$errors_before" "$METRICS_ERRORS" "Errors unchanged after second summary" || true
+}
+
+# Test cleanup_temp_dir rejects dangerous paths
+test_cleanup_temp_dir_rejects_dangerous_paths() {
+    log_step "Testing cleanup_temp_dir path validation"
+
+    # Test rejection of empty path
+    assert_command_fails "cleanup_temp_dir rejects empty path" cleanup_temp_dir ""
+
+    # Test rejection of root
+    assert_command_fails "cleanup_temp_dir rejects /" cleanup_temp_dir "/"
+
+    # Test rejection of /tmp itself
+    assert_command_fails "cleanup_temp_dir rejects /tmp" cleanup_temp_dir "/tmp"
+
+    # Test rejection of relative path
+    assert_command_fails "cleanup_temp_dir rejects relative path" cleanup_temp_dir "tmp/devforge.test"
+
+    # Test rejection of path outside temp
+    assert_command_fails "cleanup_temp_dir rejects /var path" cleanup_temp_dir "/var/devforge.test"
+
+    # Test rejection of path without devforge prefix
+    assert_command_fails "cleanup_temp_dir rejects non-devforge prefix" cleanup_temp_dir "/tmp/something.test"
+}
+
+# Test create_temp_dir and cleanup_temp_dir with real directories
+test_temp_dir_lifecycle() {
+    log_step "Testing temp directory lifecycle"
+
+    # Create a real temp directory
+    local tmp_dir
+    tmp_dir=$(create_temp_dir)
+
+    # Verify it was created
+    increment_tests_run
+    if [[ -d "$tmp_dir" ]]; then
+        increment_tests_passed
+        log_success "create_temp_dir creates directory"
+    else
+        increment_tests_failed
+        log_error "create_temp_dir creates directory"
+        log_error "  Directory not found: $tmp_dir"
+        return 1
+    fi
+
+    # Verify it has devforge prefix
+    local basename
+    basename=$(basename "$tmp_dir")
+    increment_tests_run
+    if [[ "$basename" == devforge.* ]]; then
+        increment_tests_passed
+        log_success "create_temp_dir uses devforge prefix"
+    else
+        increment_tests_failed
+        log_error "create_temp_dir uses devforge prefix"
+        log_error "  Actual basename: $basename"
+    fi
+
+    # Verify cleanup works
+    assert_command_succeeds "cleanup_temp_dir removes valid directory" cleanup_temp_dir "$tmp_dir"
+
+    # Verify it's gone
+    increment_tests_run
+    if [[ ! -d "$tmp_dir" ]]; then
+        increment_tests_passed
+        log_success "Directory removed after cleanup"
+    else
+        increment_tests_failed
+        log_error "Directory removed after cleanup"
+        log_error "  Directory still exists: $tmp_dir"
+        # Clean up anyway
+        rm -rf "$tmp_dir"
+    fi
+
+    # Cleanup of non-existent path should succeed (idempotent)
+    assert_command_succeeds "cleanup_temp_dir succeeds on non-existent path" cleanup_temp_dir "$tmp_dir"
 }
 
 # Print test summary
@@ -194,7 +293,9 @@ main() {
 
     test_format_elapsed_time || true
     test_metrics_counters || true
-    test_temp_path_validation || true
+    test_summary_does_not_change_counters || true
+    test_cleanup_temp_dir_rejects_dangerous_paths || true
+    test_temp_dir_lifecycle || true
 
     print_test_summary
 }

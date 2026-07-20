@@ -80,22 +80,22 @@ metrics_increment() {
 
     case "$counter_name" in
         packages_installed)
-            ((METRICS_PACKAGES_INSTALLED++))
+            METRICS_PACKAGES_INSTALLED=$((METRICS_PACKAGES_INSTALLED + 1))
             ;;
         packages_skipped)
-            ((METRICS_PACKAGES_SKIPPED++))
+            METRICS_PACKAGES_SKIPPED=$((METRICS_PACKAGES_SKIPPED + 1))
             ;;
         applications_installed)
-            ((METRICS_APPLICATIONS_INSTALLED++))
+            METRICS_APPLICATIONS_INSTALLED=$((METRICS_APPLICATIONS_INSTALLED + 1))
             ;;
         applications_skipped)
-            ((METRICS_APPLICATIONS_SKIPPED++))
+            METRICS_APPLICATIONS_SKIPPED=$((METRICS_APPLICATIONS_SKIPPED + 1))
             ;;
         warnings)
-            ((METRICS_WARNINGS++))
+            METRICS_WARNINGS=$((METRICS_WARNINGS + 1))
             ;;
         errors)
-            ((METRICS_ERRORS++))
+            METRICS_ERRORS=$((METRICS_ERRORS + 1))
             ;;
         *)
             # Unknown counter - silently ignore
@@ -210,14 +210,14 @@ format_elapsed_time() {
     fi
 }
 
-# Print installation summary report
+# Print installation summary report (read-only - does not modify metrics)
 metrics_print_summary() {
     if [[ "$METRICS_ENABLED" != "true" ]]; then
         return 0
     fi
 
     printf "\n"
-    log_step "Installation Summary"
+    printf "\n${COLOR_CYAN}==>${COLOR_RESET} %s\n" "Installation Summary"
 
     # Modules section
     printf "\nModules:\n"
@@ -232,7 +232,7 @@ metrics_print_summary() {
                 local elapsed="${METRICS_MODULE_ELAPSED_TIMES[$module_name]}"
                 elapsed_str=" ($(format_elapsed_time "$elapsed"))"
             fi
-            log_success "$module_name$elapsed_str"
+            printf "${COLOR_GREEN}✓${COLOR_RESET} %s\n" "$module_name$elapsed_str"
         done
     fi
 
@@ -244,7 +244,7 @@ metrics_print_summary() {
                 local elapsed="${METRICS_MODULE_ELAPSED_TIMES[$module_name]}"
                 elapsed_str=" ($(format_elapsed_time "$elapsed"))"
             fi
-            log_error "$module_name$elapsed_str"
+            printf "${COLOR_RED}✗${COLOR_RESET} %s\n" "$module_name$elapsed_str"
         done
     fi
 

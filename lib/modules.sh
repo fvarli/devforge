@@ -44,10 +44,21 @@ run_module() {
 
 run_selected_modules() {
     local module_name
+    local any_failed=false
 
     for module_name in "${SELECTED_MODULES[@]}"; do
-        run_module "$module_name"
+        # Explicitly catch module failures - do not let set -e terminate
+        if ! run_module "$module_name"; then
+            any_failed=true
+        fi
     done
+
+    # Return non-zero if any module failed
+    if [[ "$any_failed" == "true" ]]; then
+        return 1
+    fi
+
+    return 0
 }
 
 print_installation_summary() {
@@ -63,17 +74,17 @@ print_installation_summary() {
         return 0
     fi
 
-    # Fallback to original summary if metrics not enabled
+    # Fallback to original summary if metrics not enabled (read-only output)
     local module_name
 
     printf "\n"
-    log_step "Installation summary"
+    printf "\n${COLOR_CYAN}==>${COLOR_RESET} %s\n" "Installation summary"
 
     if [[ "${#COMPLETED_MODULES[@]}" -gt 0 ]]; then
         printf "\nCompleted:\n"
 
         for module_name in "${COMPLETED_MODULES[@]}"; do
-            log_success "$module_name"
+            printf "${COLOR_GREEN}✓${COLOR_RESET} %s\n" "$module_name"
         done
     fi
 
@@ -81,7 +92,7 @@ print_installation_summary() {
         printf "\nFailed:\n"
 
         for module_name in "${FAILED_MODULES[@]}"; do
-            log_error "$module_name"
+            printf "${COLOR_RED}✗${COLOR_RESET} %s\n" "$module_name"
         done
 
         return 1
