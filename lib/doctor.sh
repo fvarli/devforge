@@ -13,22 +13,23 @@ DOCTOR_CHECKS_WARNINGS=0
 DOCTOR_CHECKS_FAILED=0
 
 # Doctor output functions
+# Safe counter increment (avoids set -e issues when counter is 0)
 doctor_pass() {
     printf "${COLOR_GREEN}[OK]${COLOR_RESET} %s\n" "$*"
-    ((DOCTOR_CHECKS_TOTAL++))
-    ((DOCTOR_CHECKS_PASSED++))
+    DOCTOR_CHECKS_TOTAL=$((DOCTOR_CHECKS_TOTAL + 1))
+    DOCTOR_CHECKS_PASSED=$((DOCTOR_CHECKS_PASSED + 1))
 }
 
 doctor_warn() {
     printf "${COLOR_YELLOW}[WARN]${COLOR_RESET} %s\n" "$*"
-    ((DOCTOR_CHECKS_TOTAL++))
-    ((DOCTOR_CHECKS_WARNINGS++))
+    DOCTOR_CHECKS_TOTAL=$((DOCTOR_CHECKS_TOTAL + 1))
+    DOCTOR_CHECKS_WARNINGS=$((DOCTOR_CHECKS_WARNINGS + 1))
 }
 
 doctor_fail() {
     printf "${COLOR_RED}[FAIL]${COLOR_RESET} %s\n" "$*"
-    ((DOCTOR_CHECKS_TOTAL++))
-    ((DOCTOR_CHECKS_FAILED++))
+    DOCTOR_CHECKS_TOTAL=$((DOCTOR_CHECKS_TOTAL + 1))
+    DOCTOR_CHECKS_FAILED=$((DOCTOR_CHECKS_FAILED + 1))
 }
 
 doctor_skip() {

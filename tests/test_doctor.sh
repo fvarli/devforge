@@ -308,6 +308,58 @@ test_doctor_output_prefixes() {
     fi
 }
 
+# Regression test: counters must work from 0 under set -e
+# This tests that we use safe assignment (VAR=$((VAR + 1))) instead of
+# unsafe post-increment (((VAR++))) which fails when VAR=0
+test_doctor_counters_strict_mode() {
+    log_step "Testing doctor counters strict mode (regression)"
+
+    # Reset all counters to 0
+    DOCTOR_CHECKS_TOTAL=0
+    DOCTOR_CHECKS_PASSED=0
+    DOCTOR_CHECKS_WARNINGS=0
+    DOCTOR_CHECKS_FAILED=0
+
+    # Under set -e, ((0++)) evaluates to 0 (falsy) and triggers ERR trap
+    # Our safe pattern (VAR=$((VAR + 1))) should not fail
+
+    # This would fail with ((DOCTOR_CHECKS_TOTAL++)) when counter is 0
+    increment_tests_run
+    if doctor_pass "strict mode test" >/dev/null 2>&1; then
+        increment_tests_passed
+        log_success "doctor_pass works from counter 0"
+    else
+        increment_tests_failed
+        log_error "doctor_pass works from counter 0"
+    fi
+
+    # Reset and test doctor_warn from 0
+    DOCTOR_CHECKS_TOTAL=0
+    DOCTOR_CHECKS_WARNINGS=0
+
+    increment_tests_run
+    if doctor_warn "strict mode test" >/dev/null 2>&1; then
+        increment_tests_passed
+        log_success "doctor_warn works from counter 0"
+    else
+        increment_tests_failed
+        log_error "doctor_warn works from counter 0"
+    fi
+
+    # Reset and test doctor_fail from 0
+    DOCTOR_CHECKS_TOTAL=0
+    DOCTOR_CHECKS_FAILED=0
+
+    increment_tests_run
+    if doctor_fail "strict mode test" >/dev/null 2>&1; then
+        increment_tests_passed
+        log_success "doctor_fail works from counter 0"
+    else
+        increment_tests_failed
+        log_error "doctor_fail works from counter 0"
+    fi
+}
+
 # Print test summary
 print_test_summary() {
     printf "\n"
@@ -333,6 +385,7 @@ main() {
 
     test_doctor_counter_init || true
     test_doctor_counter_increments || true
+    test_doctor_counters_strict_mode || true
     test_doctor_exit_status || true
     test_doctor_no_side_effects || true
     test_doctor_summary_format || true

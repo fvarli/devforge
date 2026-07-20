@@ -36,18 +36,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Cache ShellCheck
-        uses: actions/cache@v4
-        with:
-          path: ~/.local/bin/shellcheck
-          key: shellcheck-v0.10.0
-
       - name: Install ShellCheck
         run: |
-          if ! command -v shellcheck &> /dev/null; then
-            sudo apt-get update
-            sudo apt-get install -y shellcheck
-          fi
+          sudo apt-get update
+          sudo apt-get install -y shellcheck
           shellcheck --version
 
       - name: ShellCheck install.sh
@@ -63,7 +55,7 @@ jobs:
         run: shellcheck doctor/*.sh
 
       - name: ShellCheck tests/
-        run: shellcheck tests/*.sh || true  # Tests may have intentional issues
+        run: shellcheck tests/*.sh
 
   unit-tests:
     name: Unit Tests
@@ -97,9 +89,11 @@ jobs:
       - name: Run doctor command
         id: doctor
         run: |
-          # Capture doctor output
-          ./install.sh --doctor > doctor_output.txt 2>&1 || true
+          # Capture doctor output - exit code 1 is expected on fresh system
+          ./install.sh --doctor > doctor_output.txt 2>&1 || doctor_exit=$?
           cat doctor_output.txt
+          # Doctor returns 1 when components are missing (expected)
+          # We validate output format below, not exit code here
 
       - name: Validate doctor output format
         run: |
@@ -180,8 +174,8 @@ jobs:
           if [[ $exit_code -eq 0 ]]; then
             echo "Doctor passed with all modules disabled"
           else
-            echo "Doctor failed - checking output"
-            ./install.sh --doctor || true
+            echo "Doctor failed - showing output for debugging"
+            ./install.sh --doctor 2>&1 || true  # Show output only, exit handled above
             exit 1
           fi
 

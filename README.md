@@ -366,12 +366,26 @@ Check the specific module's requirements:
 
 ### APT lock errors
 
-Wait for other package managers to finish, or:
+Wait for other package managers to finish:
 
 ```bash
-sudo rm /var/lib/apt/lists/lock
-sudo rm /var/cache/apt/archives/lock
+# Check for running apt/dpkg processes
+ps aux | grep -E 'apt|dpkg'
+
+# Wait for lock to be released (Ctrl+C to abort)
+while sudo fuser /var/lib/apt/lists/lock >/dev/null 2>&1; do
+    echo "Waiting for apt lock..."
+    sleep 5
+done
 ```
+
+If apt is stuck after a system crash, run:
+
+```bash
+sudo dpkg --configure -a
+```
+
+**Warning:** Do not delete lock files while apt/dpkg is running.
 
 ## Supported Distributions
 

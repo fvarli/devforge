@@ -6,19 +6,36 @@
 doctor_check_system() {
     doctor_section "System"
 
-    # Check OS
+    # Check OS and validate support
     if [[ -f /etc/os-release ]]; then
         # shellcheck source=/dev/null
         . /etc/os-release
-        doctor_pass "OS: ${PRETTY_NAME:-$ID}"
+        local is_supported=false
+        case "$ID" in
+            ubuntu|kubuntu|xubuntu|lubuntu|pop|linuxmint)
+                is_supported=true
+                ;;
+        esac
+        if [[ "$is_supported" == "true" ]]; then
+            doctor_pass "OS: ${PRETTY_NAME:-$ID}"
+        else
+            doctor_warn "OS: ${PRETTY_NAME:-$ID} (unsupported, Ubuntu-based recommended)"
+        fi
     else
         doctor_warn "Cannot determine OS (/etc/os-release not found)"
     fi
 
-    # Check architecture
+    # Check architecture and validate support
     local arch
     arch="$(uname -m)"
-    doctor_pass "Architecture: $arch"
+    case "$arch" in
+        x86_64|amd64)
+            doctor_pass "Architecture: $arch"
+            ;;
+        *)
+            doctor_warn "Architecture: $arch (some modules require amd64)"
+            ;;
+    esac
 
     # Check disk space (warn if < 5GB free)
     local free_space

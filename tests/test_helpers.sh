@@ -438,20 +438,27 @@ test_validate_boolean_configs() {
 }
 
 # Test Ubuntu codename validation
+# Policy: Only documented LTS releases are supported (jammy=22.04, noble=24.04)
 test_is_valid_ubuntu_codename() {
-    log_step "Testing is_valid_ubuntu_codename"
+    log_step "Testing is_valid_ubuntu_codename (LTS-only policy)"
 
-    # Valid codenames
-    assert_command_succeeds "is_valid_ubuntu_codename accepts focal" is_valid_ubuntu_codename "focal"
-    assert_command_succeeds "is_valid_ubuntu_codename accepts jammy" is_valid_ubuntu_codename "jammy"
-    assert_command_succeeds "is_valid_ubuntu_codename accepts noble" is_valid_ubuntu_codename "noble"
-    assert_command_succeeds "is_valid_ubuntu_codename accepts mantic" is_valid_ubuntu_codename "mantic"
-    assert_command_succeeds "is_valid_ubuntu_codename accepts lunar" is_valid_ubuntu_codename "lunar"
+    # Supported LTS releases (documented in README)
+    assert_command_succeeds "is_valid_ubuntu_codename accepts jammy (22.04 LTS)" is_valid_ubuntu_codename "jammy"
+    assert_command_succeeds "is_valid_ubuntu_codename accepts noble (24.04 LTS)" is_valid_ubuntu_codename "noble"
 
-    # Invalid codenames
+    # Rejected: EOL interim releases
+    assert_command_fails "is_valid_ubuntu_codename rejects lunar (23.04 interim EOL)" is_valid_ubuntu_codename "lunar"
+    assert_command_fails "is_valid_ubuntu_codename rejects mantic (23.10 interim EOL)" is_valid_ubuntu_codename "mantic"
+
+    # Rejected: undocumented/older releases
+    assert_command_fails "is_valid_ubuntu_codename rejects focal (20.04 undocumented)" is_valid_ubuntu_codename "focal"
+    assert_command_fails "is_valid_ubuntu_codename rejects bionic (18.04 EOL)" is_valid_ubuntu_codename "bionic"
+
+    # Rejected: invalid values
     assert_command_fails "is_valid_ubuntu_codename rejects invalid" is_valid_ubuntu_codename "invalid"
     assert_command_fails "is_valid_ubuntu_codename rejects empty" is_valid_ubuntu_codename ""
-    assert_command_fails "is_valid_ubuntu_codename rejects bionic" is_valid_ubuntu_codename "bionic"
+    assert_command_fails "is_valid_ubuntu_codename rejects derivative codename vera" is_valid_ubuntu_codename "vera"
+    assert_command_fails "is_valid_ubuntu_codename rejects derivative codename odin" is_valid_ubuntu_codename "odin"
 }
 
 # Test boolean config validation

@@ -30,27 +30,45 @@ doctor_check_apps() {
         doctor_skip "DBeaver: disabled"
     fi
 
-    # Flatpak apps
-    if command_exists flatpak; then
-        # Bitwarden
-        if [[ "${INSTALL_BITWARDEN:-true}" == "true" ]]; then
-            if flatpak info com.bitwarden.desktop >/dev/null 2>&1; then
-                doctor_pass "Bitwarden: installed (Flatpak)"
-            else
-                doctor_fail "Bitwarden: not found"
-            fi
+    # Flatpak apps - check if flatpak is needed first
+    local need_flatpak=false
+    if [[ "${INSTALL_BITWARDEN:-true}" == "true" ]] || \
+       [[ "${INSTALL_SPOTIFY:-true}" == "true" ]]; then
+        need_flatpak=true
+    fi
+
+    if [[ "$need_flatpak" == "true" ]]; then
+        if ! command_exists flatpak; then
+            # Flatpak missing but apps are enabled - this is a failure
+            doctor_fail "Flatpak: not installed (required for Bitwarden/Spotify)"
         else
+            # Flatpak available, check individual apps
+            if [[ "${INSTALL_BITWARDEN:-true}" == "true" ]]; then
+                if flatpak info com.bitwarden.desktop >/dev/null 2>&1; then
+                    doctor_pass "Bitwarden: installed (Flatpak)"
+                else
+                    doctor_fail "Bitwarden: not found"
+                fi
+            else
+                doctor_skip "Bitwarden: disabled"
+            fi
+
+            if [[ "${INSTALL_SPOTIFY:-true}" == "true" ]]; then
+                if flatpak info com.spotify.Client >/dev/null 2>&1; then
+                    doctor_pass "Spotify: installed (Flatpak)"
+                else
+                    doctor_fail "Spotify: not found"
+                fi
+            else
+                doctor_skip "Spotify: disabled"
+            fi
+        fi
+    else
+        # Both apps disabled
+        if [[ "${INSTALL_BITWARDEN:-true}" != "true" ]]; then
             doctor_skip "Bitwarden: disabled"
         fi
-
-        # Spotify
-        if [[ "${INSTALL_SPOTIFY:-true}" == "true" ]]; then
-            if flatpak info com.spotify.Client >/dev/null 2>&1; then
-                doctor_pass "Spotify: installed (Flatpak)"
-            else
-                doctor_fail "Spotify: not found"
-            fi
-        else
+        if [[ "${INSTALL_SPOTIFY:-true}" != "true" ]]; then
             doctor_skip "Spotify: disabled"
         fi
     fi

@@ -1,4 +1,7 @@
-# DevForge v1.0.0
+# DevForge v1.0.0 — Draft Release Notes
+
+> **Note:** This document is a draft for the upcoming v1.0.0 release.
+> The runtime version remains 0.9.0 until the actual release.
 
 First stable release of DevForge - a modular developer workstation bootstrap for Ubuntu-based Linux distributions.
 

@@ -696,7 +696,9 @@ resolve_ubuntu_codename() {
 }
 
 # Known valid Ubuntu codenames for Docker repository
-VALID_UBUNTU_CODENAMES=("focal" "jammy" "noble" "mantic" "lunar")
+# Supported Ubuntu LTS releases (documented in README)
+# 22.04 LTS = jammy, 24.04 LTS = noble
+VALID_UBUNTU_CODENAMES=("jammy" "noble")
 
 # Check if codename is a known Ubuntu release
 is_valid_ubuntu_codename() {
