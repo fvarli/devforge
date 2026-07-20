@@ -118,6 +118,11 @@ main() {
     return 1
 }
 
-# Run main and exit with its status
-main "$@"
-exit $?
+# Run main in conditional context to prevent ERR trap on expected failures
+# Expected module failures return 1 from main but should not trigger on_error
+if main "$@"; then
+    exit 0
+else
+    exit_code=$?
+    exit "$exit_code"
+fi
