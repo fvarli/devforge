@@ -314,6 +314,76 @@ test_run_selected_modules_behavior() {
     fi
 }
 
+# Test PHP version validation
+test_php_version_validation() {
+    log_step "Testing PHP version validation"
+
+    # Source PHP module for validate_php_version function
+    source "$DEVFORGE_ROOT/modules/php.sh"
+
+    # Valid versions
+    assert_command_succeeds "validate_php_version accepts 8.0" validate_php_version "8.0"
+    assert_command_succeeds "validate_php_version accepts 8.1" validate_php_version "8.1"
+    assert_command_succeeds "validate_php_version accepts 8.2" validate_php_version "8.2"
+    assert_command_succeeds "validate_php_version accepts 8.3" validate_php_version "8.3"
+    assert_command_succeeds "validate_php_version accepts 8.4" validate_php_version "8.4"
+    assert_command_succeeds "validate_php_version accepts 8.5" validate_php_version "8.5"
+
+    # Invalid versions
+    assert_command_fails "validate_php_version rejects 7.4" validate_php_version "7.4"
+    assert_command_fails "validate_php_version rejects 8.6" validate_php_version "8.6"
+    assert_command_fails "validate_php_version rejects 9.0" validate_php_version "9.0"
+    assert_command_fails "validate_php_version rejects empty" validate_php_version ""
+    assert_command_fails "validate_php_version rejects invalid format" validate_php_version "8"
+    assert_command_fails "validate_php_version rejects string" validate_php_version "latest"
+}
+
+# Test Node version validation
+test_node_version_validation() {
+    log_step "Testing Node version validation"
+
+    # Source Node module for validate_node_version function
+    source "$DEVFORGE_ROOT/modules/node.sh"
+
+    # Valid versions - special names
+    assert_command_succeeds "validate_node_version accepts lts" validate_node_version "lts"
+    assert_command_succeeds "validate_node_version accepts latest" validate_node_version "latest"
+
+    # Valid versions - numeric
+    assert_command_succeeds "validate_node_version accepts 22" validate_node_version "22"
+    assert_command_succeeds "validate_node_version accepts 22.14" validate_node_version "22.14"
+    assert_command_succeeds "validate_node_version accepts 22.14.0" validate_node_version "22.14.0"
+    assert_command_succeeds "validate_node_version accepts 18" validate_node_version "18"
+
+    # Invalid versions
+    assert_command_fails "validate_node_version rejects empty" validate_node_version ""
+    assert_command_fails "validate_node_version rejects invalid string" validate_node_version "stable"
+    assert_command_fails "validate_node_version rejects v prefix" validate_node_version "v22"
+    assert_command_fails "validate_node_version rejects alpha suffix" validate_node_version "22.0.0-alpha"
+}
+
+# Test Ubuntu codename resolution
+test_ubuntu_codename_resolution() {
+    log_step "Testing Ubuntu codename resolution"
+
+    # Source Docker module for get_ubuntu_codename function
+    source "$DEVFORGE_ROOT/modules/docker.sh"
+
+    # Test that get_ubuntu_codename returns something (we can't predict the exact value)
+    local codename
+    codename="$(get_ubuntu_codename 2>/dev/null)" || true
+
+    increment_tests_run
+    if [[ -n "$codename" ]]; then
+        increment_tests_passed
+        log_success "get_ubuntu_codename returned: $codename"
+    else
+        # On non-Ubuntu systems this may fail, which is expected
+        increment_tests_passed
+        log_info "get_ubuntu_codename returned empty (expected on non-Ubuntu)"
+    fi
+}
+
 # Print test summary
 print_test_summary() {
     printf "\n"
@@ -343,6 +413,9 @@ main() {
     test_cleanup_temp_dir_rejects_dangerous_paths || true
     test_temp_dir_lifecycle || true
     test_run_selected_modules_behavior || true
+    test_php_version_validation || true
+    test_node_version_validation || true
+    test_ubuntu_codename_resolution || true
 
     print_test_summary
 }

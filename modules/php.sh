@@ -6,6 +6,24 @@
 # Default PHP version if not set in config
 PHP_VERSION="${PHP_VERSION:-8.4}"
 
+# Config defaults
+SET_DEFAULT_PHP="${SET_DEFAULT_PHP:-true}"
+INSTALL_PHP_IMAGICK="${INSTALL_PHP_IMAGICK:-true}"
+INSTALL_LARAVEL_INSTALLER="${INSTALL_LARAVEL_INSTALLER:-true}"
+INSTALL_SYMFONY_CLI="${INSTALL_SYMFONY_CLI:-true}"
+
+validate_php_version() {
+    local version="$1"
+
+    # Allow: 8.0, 8.1, 8.2, 8.3, 8.4, 8.5
+    if [[ ! "$version" =~ ^8\.[0-5]$ ]]; then
+        log_error "Invalid PHP_VERSION: $version (supported: 8.0-8.5)"
+        return 1
+    fi
+
+    return 0
+}
+
 ensure_php_prerequisites() {
     local prerequisites=(
         ca-certificates
@@ -29,9 +47,9 @@ ensure_php_prerequisites() {
 setup_ondrej_php_repository() {
     log_info "Setting up ondrej/php PPA for PHP ${PHP_VERSION}..."
 
-    # Check if PPA already added
-    if [[ -f /etc/apt/sources.list.d/ondrej-ubuntu-php-*.list ]] || \
-       [[ -f /etc/apt/sources.list.d/ondrej-php-*.list ]]; then
+    # Robust check using compgen for safe glob expansion
+    if compgen -G "/etc/apt/sources.list.d/*ondrej*php*.list" >/dev/null 2>&1 || \
+       compgen -G "/etc/apt/sources.list.d/*ondrej*php*.sources" >/dev/null 2>&1; then
         log_info "ondrej/php PPA already configured."
         return 0
     fi
@@ -71,6 +89,7 @@ install_php_packages() {
         "php${PHP_VERSION}-soap"
         "php${PHP_VERSION}-readline"
         "php${PHP_VERSION}-opcache"
+        "php-pear"
     )
 
     local package_name
@@ -83,6 +102,89 @@ install_php_packages() {
     done
 
     log_success "PHP ${PHP_VERSION} packages installed"
+    return 0
+}
+
+set_default_php_version() {
+    if [[ "${SET_DEFAULT_PHP}" != "true" ]]; then
+        log_info "Skipping default PHP version configuration (SET_DEFAULT_PHP=false)"
+        return 0
+    fi
+
+    log_info "Setting PHP ${PHP_VERSION} as default..."
+
+    local php_binary="/usr/bin/php${PHP_VERSION}"
+
+    if [[ ! -x "$php_binary" ]]; then
+        log_error "PHP binary not found: $php_binary"
+        return 1
+    fi
+
+    # Set update-alternatives for PHP commands
+    local alternatives=(
+        "php:php${PHP_VERSION}"
+        "phar:phar${PHP_VERSION}"
+        "phar.phar:phar.phar${PHP_VERSION}"
+        "phpize:phpize${PHP_VERSION}"
+        "php-config:php-config${PHP_VERSION}"
+    )
+
+    local entry
+    local name
+    local binary
+
+    for entry in "${alternatives[@]}"; do
+        name="${entry%%:*}"
+        binary="${entry#*:}"
+
+        if [[ -x "/usr/bin/$binary" ]]; then
+            if ! update-alternatives --set "$name" "/usr/bin/$binary" 2>/dev/null; then
+                # Alternative may not exist yet, try to install it
+                update-alternatives --install "/usr/bin/$name" "$name" "/usr/bin/$binary" 100 2>/dev/null || true
+                update-alternatives --set "$name" "/usr/bin/$binary" 2>/dev/null || true
+            fi
+        fi
+    done
+
+    # Verify default PHP version
+    local actual_version
+    actual_version="$(php -r 'echo PHP_MAJOR_VERSION . "." . PHP_MINOR_VERSION;' 2>/dev/null)"
+
+    if [[ "$actual_version" != "$PHP_VERSION" ]]; then
+        log_warning "PHP default version mismatch: expected $PHP_VERSION, got $actual_version"
+        return 1
+    fi
+
+    log_success "PHP ${PHP_VERSION} set as default"
+    return 0
+}
+
+get_composer_global_bin() {
+    local target_home
+    target_home="$(get_target_home)"
+
+    # Try to get bin-dir from Composer config
+    local bin_dir
+    bin_dir="$(run_as_target_user composer global config bin-dir --absolute 2>/dev/null || true)"
+
+    if [[ -n "$bin_dir" && -d "$bin_dir" ]]; then
+        echo "$bin_dir"
+        return 0
+    fi
+
+    # Fallback to known paths
+    if [[ -d "$target_home/.config/composer/vendor/bin" ]]; then
+        echo "$target_home/.config/composer/vendor/bin"
+        return 0
+    fi
+
+    if [[ -d "$target_home/.composer/vendor/bin" ]]; then
+        echo "$target_home/.composer/vendor/bin"
+        return 0
+    fi
+
+    # Return expected default path even if it doesn't exist yet
+    echo "$target_home/.config/composer/vendor/bin"
     return 0
 }
 
@@ -119,6 +221,13 @@ install_composer() {
         return 1
     fi
 
+    # Validate signature format (SHA384 = 96 hex chars)
+    if [[ ! "$expected_sig" =~ ^[a-fA-F0-9]{96}$ ]]; then
+        log_error "Invalid Composer signature format"
+        cleanup_temp_dir "$tmp_dir"
+        return 1
+    fi
+
     # Download installer
     if ! download_file "https://getcomposer.org/installer" "$installer_path"; then
         log_error "Failed to download Composer installer"
@@ -126,9 +235,9 @@ install_composer() {
         return 1
     fi
 
-    # Verify installer signature
+    # Verify installer signature using specified PHP version
     local actual_sig
-    actual_sig="$(php -r "echo hash_file('sha384', '$installer_path');")"
+    actual_sig="$("php${PHP_VERSION}" -r "echo hash_file('sha384', '$installer_path');")"
 
     if [[ "$expected_sig" != "$actual_sig" ]]; then
         log_error "Composer installer signature verification failed"
@@ -140,8 +249,8 @@ install_composer() {
 
     log_info "Composer installer signature verified"
 
-    # Run installer
-    if ! php "$installer_path" --install-dir=/usr/local/bin --filename=composer; then
+    # Run installer with specified PHP version
+    if ! "php${PHP_VERSION}" "$installer_path" --install-dir=/usr/local/bin --filename=composer; then
         log_error "Failed to install Composer"
         cleanup_temp_dir "$tmp_dir"
         return 1
@@ -162,21 +271,16 @@ install_composer() {
 }
 
 install_laravel_installer() {
-    local target_home
-    local composer_bin_path
-
-    target_home="$(get_target_home)"
-    composer_bin_path="$target_home/.config/composer/vendor/bin"
-
-    # Check if Laravel installer already exists
-    if [[ -x "$composer_bin_path/laravel" ]]; then
-        log_info "Laravel installer is already installed. Skipping."
-        metrics_record_application_skipped
+    if [[ "${INSTALL_LARAVEL_INSTALLER}" != "true" ]]; then
+        log_info "Skipping Laravel installer (INSTALL_LARAVEL_INSTALLER=false)"
         return 0
     fi
 
-    # Alternative location check
-    if [[ -x "$target_home/.composer/vendor/bin/laravel" ]]; then
+    local composer_bin_path
+    composer_bin_path="$(get_composer_global_bin)"
+
+    # Check if Laravel installer already exists
+    if [[ -x "$composer_bin_path/laravel" ]]; then
         log_info "Laravel installer is already installed. Skipping."
         metrics_record_application_skipped
         return 0
@@ -199,9 +303,21 @@ install_laravel_installer() {
     # Configure PATH for composer global binaries
     configure_composer_path
 
+    # Refresh bin path after installation
+    composer_bin_path="$(get_composer_global_bin)"
+
     # Verify installation
-    if [[ -x "$composer_bin_path/laravel" ]] || [[ -x "$target_home/.composer/vendor/bin/laravel" ]]; then
-        log_success "Laravel installer installed"
+    if [[ -x "$composer_bin_path/laravel" ]]; then
+        # Verify laravel command works
+        local laravel_version
+        laravel_version="$(run_as_target_user "$composer_bin_path/laravel" --version 2>/dev/null | head -n1 || true)"
+
+        if [[ -n "$laravel_version" ]]; then
+            log_success "Laravel installer installed: $laravel_version"
+        else
+            log_success "Laravel installer installed"
+        fi
+
         metrics_record_application_installed
         return 0
     fi
@@ -259,6 +375,11 @@ add_composer_path_to_file() {
 }
 
 install_symfony_cli() {
+    if [[ "${INSTALL_SYMFONY_CLI}" != "true" ]]; then
+        log_info "Skipping Symfony CLI (INSTALL_SYMFONY_CLI=false)"
+        return 0
+    fi
+
     if command_exists symfony; then
         log_info "Symfony CLI is already installed. Skipping."
         metrics_record_application_skipped
@@ -272,16 +393,43 @@ install_symfony_cli() {
         return 1
     fi
 
+    local installer_path="$tmp_dir/symfony-installer"
+    local symfony_binary="$tmp_dir/symfony"
+
     # Download Symfony CLI installer
-    if ! download_file "https://get.symfony.com/cli/installer" "$tmp_dir/symfony-installer"; then
+    if ! download_file "https://get.symfony.com/cli/installer" "$installer_path"; then
         log_error "Failed to download Symfony CLI installer"
         cleanup_temp_dir "$tmp_dir"
         return 1
     fi
 
-    # Run installer with install directory
-    if ! bash "$tmp_dir/symfony-installer" --install-dir=/usr/local/bin; then
-        log_error "Failed to install Symfony CLI"
+    # Run installer - it downloads the binary to current directory
+    if ! (cd "$tmp_dir" && bash "$installer_path" --install-dir="$tmp_dir"); then
+        log_error "Failed to run Symfony CLI installer"
+        cleanup_temp_dir "$tmp_dir"
+        return 1
+    fi
+
+    # Find the downloaded binary (may be in tmp_dir or tmp_dir/.symfony*/bin)
+    local found_binary=""
+    if [[ -f "$tmp_dir/symfony" ]]; then
+        found_binary="$tmp_dir/symfony"
+    elif [[ -f "$tmp_dir/.symfony5/bin/symfony" ]]; then
+        found_binary="$tmp_dir/.symfony5/bin/symfony"
+    else
+        # Search for it
+        found_binary="$(find "$tmp_dir" -name 'symfony' -type f -executable 2>/dev/null | head -n1)"
+    fi
+
+    if [[ -z "$found_binary" || ! -f "$found_binary" ]]; then
+        log_error "Symfony binary not found after installation"
+        cleanup_temp_dir "$tmp_dir"
+        return 1
+    fi
+
+    # Install to /usr/local/bin with proper permissions
+    if ! install -o root -g root -m 755 "$found_binary" /usr/local/bin/symfony; then
+        log_error "Failed to install Symfony CLI to /usr/local/bin"
         cleanup_temp_dir "$tmp_dir"
         return 1
     fi
@@ -301,6 +449,11 @@ install_symfony_cli() {
 }
 
 install_pecl_imagick() {
+    if [[ "${INSTALL_PHP_IMAGICK}" != "true" ]]; then
+        log_info "Skipping imagick (INSTALL_PHP_IMAGICK=false)"
+        return 0
+    fi
+
     log_info "Attempting to install PECL imagick..."
 
     # Install ImageMagick development libraries
@@ -315,9 +468,21 @@ install_pecl_imagick() {
         return 0
     fi
 
-    # Check if imagick is already installed
-    if php -m 2>/dev/null | grep -qi imagick; then
+    # Check if imagick is already installed using specified PHP version
+    if "php${PHP_VERSION}" -m 2>/dev/null | grep -qi imagick; then
         log_info "PHP imagick extension is already installed. Skipping."
+        return 0
+    fi
+
+    # Check if imagick.ini already exists
+    local php_ini_dir="/etc/php/${PHP_VERSION}/mods-available"
+    local imagick_ini="$php_ini_dir/imagick.ini"
+
+    if [[ -f "$imagick_ini" ]]; then
+        log_info "imagick.ini already exists, enabling module..."
+        if command_exists phpenmod; then
+            phpenmod -v "$PHP_VERSION" imagick 2>/dev/null || true
+        fi
         return 0
     fi
 
@@ -329,26 +494,67 @@ install_pecl_imagick() {
     fi
 
     # Enable the extension
-    local php_ini_dir="/etc/php/${PHP_VERSION}/mods-available"
-    local imagick_ini="$php_ini_dir/imagick.ini"
-
     if [[ -d "$php_ini_dir" ]]; then
         if ! echo "extension=imagick.so" > "$imagick_ini"; then
             log_warning "Failed to create imagick.ini"
             return 0
         fi
 
-        # Enable for all SAPIs if phpenmod is available
+        # Enable for the specific PHP version
         if command_exists phpenmod; then
-            phpenmod imagick 2>/dev/null || true
+            phpenmod -v "$PHP_VERSION" imagick 2>/dev/null || true
         fi
     fi
 
-    # Verify
-    if php -m 2>/dev/null | grep -qi imagick; then
+    # Verify using specified PHP version
+    if "php${PHP_VERSION}" -m 2>/dev/null | grep -qi imagick; then
         log_success "PHP imagick extension installed"
     else
         log_warning "imagick extension installed but not loaded (may require service restart)"
+    fi
+
+    return 0
+}
+
+verify_php_extensions() {
+    log_info "Verifying PHP extensions..."
+
+    local required_extensions=(
+        bcmath
+        curl
+        gd
+        intl
+        mbstring
+        pdo_mysql
+        pdo_pgsql
+        pdo_sqlite
+        soap
+        xml
+        zip
+    )
+
+    local failed=false
+    local extension
+
+    for extension in "${required_extensions[@]}"; do
+        if "php${PHP_VERSION}" -m 2>/dev/null | grep -qi "^${extension}$"; then
+            log_info "Extension $extension: OK"
+        else
+            log_warning "Extension $extension: NOT LOADED"
+            failed=true
+        fi
+    done
+
+    # Check OPcache separately (listed as "Zend OPcache" in php -m)
+    if "php${PHP_VERSION}" -m 2>/dev/null | grep -qi "Zend OPcache"; then
+        log_info "Extension opcache: OK"
+    else
+        log_warning "Extension opcache: NOT LOADED"
+        failed=true
+    fi
+
+    if [[ "$failed" == "true" ]]; then
+        log_warning "Some PHP extensions may not be loaded (non-critical)"
     fi
 
     return 0
@@ -359,9 +565,19 @@ verify_php_installation() {
 
     local failed=false
 
-    # Verify PHP
-    if ! verify_command php "PHP" php --version; then
+    # Verify PHP with version check
+    if ! command_exists "php${PHP_VERSION}"; then
+        log_error "PHP ${PHP_VERSION} binary not found"
         failed=true
+    else
+        local php_version_output
+        php_version_output="$("php${PHP_VERSION}" --version 2>/dev/null | head -n1)"
+        if [[ -n "$php_version_output" ]]; then
+            log_success "PHP verified: $php_version_output"
+        else
+            log_error "PHP version check failed"
+            failed=true
+        fi
     fi
 
     # Verify Composer
@@ -369,34 +585,34 @@ verify_php_installation() {
         failed=true
     fi
 
-    # Verify Laravel (check in common locations)
-    local target_home
-    target_home="$(get_target_home)"
+    # Verify Laravel (if enabled)
+    if [[ "${INSTALL_LARAVEL_INSTALLER}" == "true" ]]; then
+        local composer_bin_path
+        composer_bin_path="$(get_composer_global_bin)"
 
-    local laravel_path=""
-    if [[ -x "$target_home/.config/composer/vendor/bin/laravel" ]]; then
-        laravel_path="$target_home/.config/composer/vendor/bin/laravel"
-    elif [[ -x "$target_home/.composer/vendor/bin/laravel" ]]; then
-        laravel_path="$target_home/.composer/vendor/bin/laravel"
-    fi
-
-    if [[ -n "$laravel_path" ]]; then
-        local laravel_version
-        laravel_version="$(run_as_target_user "$laravel_path" --version 2>/dev/null | head -n1)"
-        if [[ -n "$laravel_version" ]]; then
-            log_success "Laravel Installer verified: $laravel_version"
+        if [[ -x "$composer_bin_path/laravel" ]]; then
+            local laravel_version
+            laravel_version="$(run_as_target_user "$composer_bin_path/laravel" --version 2>/dev/null | head -n1 || true)"
+            if [[ -n "$laravel_version" ]]; then
+                log_success "Laravel Installer verified: $laravel_version"
+            else
+                log_success "Laravel Installer verified"
+            fi
         else
-            log_success "Laravel Installer verified"
+            log_error "Laravel Installer verification failed"
+            failed=true
         fi
-    else
-        log_error "Laravel Installer verification failed"
-        failed=true
     fi
 
-    # Verify Symfony CLI
-    if ! verify_command symfony "Symfony CLI" symfony version; then
-        failed=true
+    # Verify Symfony CLI (if enabled)
+    if [[ "${INSTALL_SYMFONY_CLI}" == "true" ]]; then
+        if ! verify_command symfony "Symfony CLI" symfony version; then
+            failed=true
+        fi
     fi
+
+    # Verify extensions
+    verify_php_extensions
 
     if [[ "$failed" == "true" ]]; then
         return 1
@@ -407,6 +623,11 @@ verify_php_installation() {
 
 install_php() {
     log_step "Installing PHP ${PHP_VERSION} development environment"
+
+    # Validate PHP version
+    if ! validate_php_version "$PHP_VERSION"; then
+        return 1
+    fi
 
     # Ensure prerequisites
     if ! ensure_php_prerequisites; then
@@ -426,25 +647,30 @@ install_php() {
         return 1
     fi
 
+    # Set default PHP version
+    if ! set_default_php_version; then
+        log_warning "Failed to set default PHP version (non-critical)"
+    fi
+
     # Install Composer
     if ! install_composer; then
         log_error "Failed to install Composer"
         return 1
     fi
 
-    # Install Laravel installer
+    # Install Laravel installer (respects config)
     if ! install_laravel_installer; then
         log_error "Failed to install Laravel installer"
         return 1
     fi
 
-    # Install Symfony CLI
+    # Install Symfony CLI (respects config)
     if ! install_symfony_cli; then
         log_error "Failed to install Symfony CLI"
         return 1
     fi
 
-    # Install PECL imagick (optional - don't fail on error)
+    # Install PECL imagick (optional - respects config, don't fail on error)
     install_pecl_imagick
 
     # Verify installation

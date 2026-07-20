@@ -340,13 +340,13 @@ ensure_apt_repository() {
     local keyring_file="$2"
     local sources_file="$3"
     local source_line="$4"
-    local key_format="${5:-binary}"  # binary or dearmor
+    local key_format="${5:-binary}"  # binary, dearmor, or ascii
 
     local needs_update=false
 
     # Validate key_format parameter
-    if [[ "$key_format" != "binary" ]] && [[ "$key_format" != "dearmor" ]]; then
-        log_error "Invalid key_format: $key_format (must be 'binary' or 'dearmor')"
+    if [[ "$key_format" != "binary" ]] && [[ "$key_format" != "dearmor" ]] && [[ "$key_format" != "ascii" ]]; then
+        log_error "Invalid key_format: $key_format (must be 'binary', 'dearmor', or 'ascii')"
         return 1
     fi
 
