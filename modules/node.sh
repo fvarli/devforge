@@ -14,6 +14,18 @@ INSTALL_PNPM="${INSTALL_PNPM:-true}"
 INSTALL_YARN="${INSTALL_YARN:-true}"
 INSTALL_BUN="${INSTALL_BUN:-true}"
 
+validate_nvm_version() {
+    local version="$1"
+
+    # NVM versions must be in format: v0.40.1
+    if [[ ! "$version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+        log_error "Invalid NVM_VERSION: $version (format: v0.40.1)"
+        return 1
+    fi
+
+    return 0
+}
+
 validate_node_version() {
     local version="$1"
 
@@ -44,19 +56,20 @@ nvm_installed() {
     [[ -d "$nvm_dir" && -f "$nvm_dir/nvm.sh" ]]
 }
 
+# Safe NVM command execution using positional parameters
+# This avoids shell injection from $* interpolation
 run_with_nvm() {
-    local target_home
     local nvm_dir
-
-    target_home="$(get_target_home)"
     nvm_dir="$(get_nvm_dir)"
 
-    # Run command with NVM loaded
-    run_as_target_user bash -c "
-        export NVM_DIR=\"$nvm_dir\"
-        [ -s \"\$NVM_DIR/nvm.sh\" ] && . \"\$NVM_DIR/nvm.sh\"
-        $*
-    "
+    # Use positional parameters safely: bash -c 'script' _ args...
+    # $0 is set to '_', $1 is nvm_dir, $2... are the actual arguments
+    run_as_target_user bash -c '
+        export NVM_DIR="$1"
+        shift
+        [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
+        "$@"
+    ' _ "$nvm_dir" "$@"
 }
 
 install_nvm() {
@@ -64,6 +77,11 @@ install_nvm() {
         log_info "NVM is already installed. Skipping."
         metrics_record_application_skipped
         return 0
+    fi
+
+    # Validate NVM_VERSION format
+    if ! validate_nvm_version "$NVM_VERSION"; then
+        return 1
     fi
 
     log_info "Installing NVM ${NVM_VERSION}..."
@@ -82,13 +100,37 @@ install_nvm() {
         fi
     fi
 
-    # Download and run NVM installer as target user
-    local nvm_install_url="https://raw.githubusercontent.com/nvm-sh/nvm/${NVM_VERSION}/install.sh"
-
-    if ! run_as_target_user bash -c "curl -fsSL '$nvm_install_url' | bash"; then
-        log_error "Failed to install NVM"
+    # Create temp directory for safe download
+    local tmp_dir
+    if ! tmp_dir="$(create_temp_dir)"; then
         return 1
     fi
+
+    local installer_path="$tmp_dir/nvm-install.sh"
+    local nvm_install_url="https://raw.githubusercontent.com/nvm-sh/nvm/${NVM_VERSION}/install.sh"
+
+    # Download installer first (no curl | bash)
+    if ! download_file "$nvm_install_url" "$installer_path"; then
+        log_error "Failed to download NVM installer"
+        cleanup_temp_dir "$tmp_dir"
+        return 1
+    fi
+
+    # Verify non-empty
+    if [[ ! -s "$installer_path" ]]; then
+        log_error "NVM installer is empty"
+        cleanup_temp_dir "$tmp_dir"
+        return 1
+    fi
+
+    # Execute installer as target user
+    if ! run_as_target_user bash "$installer_path"; then
+        log_error "Failed to install NVM"
+        cleanup_temp_dir "$tmp_dir"
+        return 1
+    fi
+
+    cleanup_temp_dir "$tmp_dir"
 
     # Verify installation
     if ! nvm_installed; then
@@ -97,7 +139,9 @@ install_nvm() {
     fi
 
     # Configure shell rc files idempotently
-    configure_nvm_shell
+    if ! configure_nvm_shell; then
+        log_warning "Failed to configure shell for NVM"
+    fi
 
     log_success "NVM ${NVM_VERSION} installed"
     metrics_record_application_installed
@@ -107,10 +151,7 @@ install_nvm() {
 
 configure_nvm_shell() {
     local target_home
-    local nvm_dir
-
     target_home="$(get_target_home)"
-    nvm_dir="$(get_nvm_dir)"
 
     local nvm_config='
 export NVM_DIR="$HOME/.nvm"
@@ -120,22 +161,37 @@ export NVM_DIR="$HOME/.nvm"
     local bashrc="$target_home/.bashrc"
     local zshrc="$target_home/.zshrc"
 
-    # Add to .bashrc if exists and not already configured
-    if [[ -f "$bashrc" ]]; then
-        if ! grep -qF 'NVM_DIR' "$bashrc" 2>/dev/null; then
-            echo "$nvm_config" >> "$bashrc"
-            ensure_target_ownership "$bashrc"
-            log_info "Added NVM configuration to .bashrc"
+    local result=0
+
+    # Configure .bashrc (create if missing)
+    if ! add_config_to_shell_file "$bashrc" "$nvm_config" "NVM_DIR"; then
+        log_warning "Failed to configure NVM in .bashrc"
+        result=1
+    fi
+
+    # Only configure .zshrc if zsh is installed
+    if command_exists zsh; then
+        if ! add_config_to_shell_file "$zshrc" "$nvm_config" "NVM_DIR"; then
+            log_warning "Failed to configure NVM in .zshrc"
+            result=1
         fi
     fi
 
-    # Add to .zshrc if exists and not already configured
-    if [[ -f "$zshrc" ]]; then
-        if ! grep -qF 'NVM_DIR' "$zshrc" 2>/dev/null; then
-            echo "$nvm_config" >> "$zshrc"
-            ensure_target_ownership "$zshrc"
-            log_info "Added NVM configuration to .zshrc"
-        fi
+    return $result
+}
+
+# Check if a specific Node version is already installed via NVM
+node_version_installed() {
+    local version="$1"
+
+    # For lts/latest, check if nvm ls shows any matching version
+    if [[ "$version" == "lts" ]]; then
+        run_with_nvm nvm ls --no-colors 2>/dev/null | grep -q "lts"
+    elif [[ "$version" == "latest" ]]; then
+        run_with_nvm nvm ls --no-colors 2>/dev/null | grep -q "node"
+    else
+        # For specific version, check if it's installed
+        run_with_nvm nvm ls "$version" --no-colors 2>/dev/null | grep -qv "N/A"
     fi
 }
 
@@ -151,20 +207,27 @@ install_node_via_nvm() {
         nvm_version_arg="node"
     fi
 
-    # Install Node.js
-    if ! run_with_nvm "nvm install $nvm_version_arg"; then
+    # Check if version already installed (for accurate metrics)
+    local already_installed=false
+    if node_version_installed "$NODE_VERSION"; then
+        already_installed=true
+        log_info "Node.js ${NODE_VERSION} is already installed via NVM"
+    fi
+
+    # Install Node.js (nvm install is idempotent)
+    if ! run_with_nvm nvm install "$nvm_version_arg"; then
         log_error "Failed to install Node.js ${NODE_VERSION}"
         return 1
     fi
 
     # Set as default
-    if ! run_with_nvm "nvm alias default $nvm_version_arg"; then
+    if ! run_with_nvm nvm alias default "$nvm_version_arg"; then
         log_warning "Failed to set Node.js ${NODE_VERSION} as default"
     fi
 
     # Verify installation
     local node_version
-    node_version="$(run_with_nvm "node --version" 2>/dev/null)"
+    node_version="$(run_with_nvm node --version 2>/dev/null)"
 
     if [[ -z "$node_version" ]]; then
         log_error "Node.js installation verification failed"
@@ -172,10 +235,16 @@ install_node_via_nvm() {
     fi
 
     local npm_version
-    npm_version="$(run_with_nvm "npm --version" 2>/dev/null)"
+    npm_version="$(run_with_nvm npm --version 2>/dev/null)"
 
     log_success "Node.js installed: $node_version (npm $npm_version)"
-    metrics_record_application_installed
+
+    # Only count as installed if it was actually newly installed
+    if [[ "$already_installed" == "true" ]]; then
+        metrics_record_application_skipped
+    else
+        metrics_record_application_installed
+    fi
 
     return 0
 }
@@ -187,7 +256,7 @@ install_pnpm() {
     fi
 
     # Check if already installed
-    if run_with_nvm "command -v pnpm" >/dev/null 2>&1; then
+    if run_with_nvm command -v pnpm >/dev/null 2>&1; then
         log_info "pnpm is already installed. Skipping."
         metrics_record_application_skipped
         return 0
@@ -195,30 +264,22 @@ install_pnpm() {
 
     log_info "Installing pnpm via Corepack..."
 
-    # Enable corepack
-    if ! run_with_nvm "corepack enable"; then
-        log_warning "Failed to enable Corepack, trying npm install..."
+    # Enable corepack - MUST succeed (no fallback)
+    if ! run_with_nvm corepack enable; then
+        log_error "Failed to enable Corepack"
+        log_error "Corepack is required for pnpm installation"
+        return 1
+    fi
 
-        # Fallback to npm install
-        if ! run_with_nvm "npm install -g pnpm"; then
-            log_error "Failed to install pnpm"
-            return 1
-        fi
-    else
-        # Prepare pnpm via corepack
-        if ! run_with_nvm "corepack prepare pnpm@latest --activate"; then
-            log_warning "Corepack prepare failed, trying npm install..."
-
-            if ! run_with_nvm "npm install -g pnpm"; then
-                log_error "Failed to install pnpm"
-                return 1
-            fi
-        fi
+    # Prepare pnpm via corepack - MUST succeed (no fallback)
+    if ! run_with_nvm corepack prepare pnpm@latest --activate; then
+        log_error "Failed to prepare pnpm via Corepack"
+        return 1
     fi
 
     # Verify installation
     local pnpm_version
-    pnpm_version="$(run_with_nvm "pnpm --version" 2>/dev/null)"
+    pnpm_version="$(run_with_nvm pnpm --version 2>/dev/null)"
 
     if [[ -z "$pnpm_version" ]]; then
         log_error "pnpm installation verification failed"
@@ -238,7 +299,7 @@ install_yarn() {
     fi
 
     # Check if already installed
-    if run_with_nvm "command -v yarn" >/dev/null 2>&1; then
+    if run_with_nvm command -v yarn >/dev/null 2>&1; then
         log_info "Yarn is already installed. Skipping."
         metrics_record_application_skipped
         return 0
@@ -246,30 +307,22 @@ install_yarn() {
 
     log_info "Installing Yarn via Corepack..."
 
-    # Enable corepack
-    if ! run_with_nvm "corepack enable"; then
-        log_warning "Failed to enable Corepack, trying npm install..."
+    # Enable corepack - MUST succeed (no fallback)
+    if ! run_with_nvm corepack enable; then
+        log_error "Failed to enable Corepack"
+        log_error "Corepack is required for Yarn installation"
+        return 1
+    fi
 
-        # Fallback to npm install
-        if ! run_with_nvm "npm install -g yarn"; then
-            log_error "Failed to install Yarn"
-            return 1
-        fi
-    else
-        # Prepare yarn via corepack
-        if ! run_with_nvm "corepack prepare yarn@stable --activate"; then
-            log_warning "Corepack prepare failed, trying npm install..."
-
-            if ! run_with_nvm "npm install -g yarn"; then
-                log_error "Failed to install Yarn"
-                return 1
-            fi
-        fi
+    # Prepare yarn via corepack - MUST succeed (no fallback)
+    if ! run_with_nvm corepack prepare yarn@stable --activate; then
+        log_error "Failed to prepare Yarn via Corepack"
+        return 1
     fi
 
     # Verify installation
     local yarn_version
-    yarn_version="$(run_with_nvm "yarn --version" 2>/dev/null)"
+    yarn_version="$(run_with_nvm yarn --version 2>/dev/null)"
 
     if [[ -z "$yarn_version" ]]; then
         log_error "Yarn installation verification failed"
@@ -320,11 +373,36 @@ install_bun() {
         fi
     fi
 
-    # Download and run Bun installer as target user
-    if ! run_as_target_user bash -c "curl -fsSL https://bun.sh/install | bash"; then
-        log_error "Failed to install Bun"
+    # Create temp directory for safe download
+    local tmp_dir
+    if ! tmp_dir="$(create_temp_dir)"; then
         return 1
     fi
+
+    local installer_path="$tmp_dir/bun-install.sh"
+
+    # Download installer first (no curl | bash)
+    if ! download_file "https://bun.sh/install" "$installer_path"; then
+        log_error "Failed to download Bun installer"
+        cleanup_temp_dir "$tmp_dir"
+        return 1
+    fi
+
+    # Verify non-empty
+    if [[ ! -s "$installer_path" ]]; then
+        log_error "Bun installer is empty"
+        cleanup_temp_dir "$tmp_dir"
+        return 1
+    fi
+
+    # Execute installer as target user
+    if ! run_as_target_user bash "$installer_path"; then
+        log_error "Failed to install Bun"
+        cleanup_temp_dir "$tmp_dir"
+        return 1
+    fi
+
+    cleanup_temp_dir "$tmp_dir"
 
     # Verify installation
     if ! bun_installed; then
@@ -333,7 +411,9 @@ install_bun() {
     fi
 
     # Configure PATH in shell rc files
-    configure_bun_path
+    if ! configure_bun_path; then
+        log_warning "Failed to configure shell for Bun"
+    fi
 
     # Get version
     local bun_dir
@@ -351,37 +431,30 @@ configure_bun_path() {
     local target_home
     target_home="$(get_target_home)"
 
-    local bun_path_line='export BUN_INSTALL="$HOME/.bun"'
-    local bun_bin_line='export PATH="$BUN_INSTALL/bin:$PATH"'
+    local bun_config='
+export BUN_INSTALL="$HOME/.bun"
+export PATH="$BUN_INSTALL/bin:$PATH"'
 
     local bashrc="$target_home/.bashrc"
     local zshrc="$target_home/.zshrc"
 
-    # Add to .bashrc if exists and not already configured
-    if [[ -f "$bashrc" ]]; then
-        if ! grep -qF 'BUN_INSTALL' "$bashrc" 2>/dev/null; then
-            {
-                echo ""
-                echo "$bun_path_line"
-                echo "$bun_bin_line"
-            } >> "$bashrc"
-            ensure_target_ownership "$bashrc"
-            log_info "Added Bun to PATH in .bashrc"
+    local result=0
+
+    # Configure .bashrc (create if missing)
+    if ! add_config_to_shell_file "$bashrc" "$bun_config" "BUN_INSTALL"; then
+        log_warning "Failed to configure Bun in .bashrc"
+        result=1
+    fi
+
+    # Only configure .zshrc if zsh is installed
+    if command_exists zsh; then
+        if ! add_config_to_shell_file "$zshrc" "$bun_config" "BUN_INSTALL"; then
+            log_warning "Failed to configure Bun in .zshrc"
+            result=1
         fi
     fi
 
-    # Add to .zshrc if exists and not already configured
-    if [[ -f "$zshrc" ]]; then
-        if ! grep -qF 'BUN_INSTALL' "$zshrc" 2>/dev/null; then
-            {
-                echo ""
-                echo "$bun_path_line"
-                echo "$bun_bin_line"
-            } >> "$zshrc"
-            ensure_target_ownership "$zshrc"
-            log_info "Added Bun to PATH in .zshrc"
-        fi
-    fi
+    return $result
 }
 
 install_npm_global_tools() {
@@ -393,13 +466,13 @@ install_npm_global_tools() {
     log_info "Installing npm global tools..."
 
     # npm-check-updates
-    if run_with_nvm "command -v ncu" >/dev/null 2>&1; then
+    if run_with_nvm command -v ncu >/dev/null 2>&1; then
         log_info "npm-check-updates is already installed. Skipping."
         metrics_record_application_skipped
     else
-        if run_with_nvm "npm install -g npm-check-updates"; then
+        if run_with_nvm npm install -g npm-check-updates; then
             local ncu_version
-            ncu_version="$(run_with_nvm "ncu --version" 2>/dev/null)"
+            ncu_version="$(run_with_nvm ncu --version 2>/dev/null)"
             log_success "npm-check-updates installed: v$ncu_version"
             metrics_record_application_installed
         else
@@ -425,7 +498,7 @@ verify_node_installation() {
 
     # Verify Node.js
     local node_version
-    node_version="$(run_with_nvm "node --version" 2>/dev/null)"
+    node_version="$(run_with_nvm node --version 2>/dev/null)"
 
     if [[ -n "$node_version" ]]; then
         log_success "Node.js verified: $node_version"
@@ -436,7 +509,7 @@ verify_node_installation() {
 
     # Verify npm
     local npm_version
-    npm_version="$(run_with_nvm "npm --version" 2>/dev/null)"
+    npm_version="$(run_with_nvm npm --version 2>/dev/null)"
 
     if [[ -n "$npm_version" ]]; then
         log_success "npm verified: v$npm_version"
@@ -448,7 +521,7 @@ verify_node_installation() {
     # Verify pnpm (if enabled)
     if [[ "${INSTALL_PNPM}" == "true" ]]; then
         local pnpm_version
-        pnpm_version="$(run_with_nvm "pnpm --version" 2>/dev/null)"
+        pnpm_version="$(run_with_nvm pnpm --version 2>/dev/null)"
 
         if [[ -n "$pnpm_version" ]]; then
             log_success "pnpm verified: v$pnpm_version"
@@ -461,7 +534,7 @@ verify_node_installation() {
     # Verify Yarn (if enabled)
     if [[ "${INSTALL_YARN}" == "true" ]]; then
         local yarn_version
-        yarn_version="$(run_with_nvm "yarn --version" 2>/dev/null)"
+        yarn_version="$(run_with_nvm yarn --version 2>/dev/null)"
 
         if [[ -n "$yarn_version" ]]; then
             log_success "Yarn verified: v$yarn_version"
@@ -517,13 +590,13 @@ install_node() {
         return 1
     fi
 
-    # Install pnpm (respects config)
+    # Install pnpm (respects config, strict Corepack)
     if ! install_pnpm; then
         log_error "Failed to install pnpm"
         return 1
     fi
 
-    # Install Yarn (respects config)
+    # Install Yarn (respects config, strict Corepack)
     if ! install_yarn; then
         log_error "Failed to install Yarn"
         return 1

@@ -12,16 +12,52 @@ INSTALL_PHP_IMAGICK="${INSTALL_PHP_IMAGICK:-true}"
 INSTALL_LARAVEL_INSTALLER="${INSTALL_LARAVEL_INSTALLER:-true}"
 INSTALL_SYMFONY_CLI="${INSTALL_SYMFONY_CLI:-true}"
 
+# Supported PHP versions (EOL versions excluded: 8.0, 8.1)
+SUPPORTED_PHP_VERSIONS=("8.2" "8.3" "8.4")
+
 validate_php_version() {
     local version="$1"
+    local supported
 
-    # Allow: 8.0, 8.1, 8.2, 8.3, 8.4, 8.5
-    if [[ ! "$version" =~ ^8\.[0-5]$ ]]; then
-        log_error "Invalid PHP_VERSION: $version (supported: 8.0-8.5)"
+    for supported in "${SUPPORTED_PHP_VERSIONS[@]}"; do
+        if [[ "$version" == "$supported" ]]; then
+            return 0
+        fi
+    done
+
+    log_error "Unsupported PHP version: $version"
+    log_error "Supported versions: ${SUPPORTED_PHP_VERSIONS[*]}"
+    log_error "Note: PHP 8.0 and 8.1 are EOL and not supported"
+    return 1
+}
+
+# Check if the system is Ubuntu-compatible for ondrej/php PPA
+is_ubuntu_compatible() {
+    if [[ ! -f /etc/os-release ]]; then
         return 1
     fi
 
-    return 0
+    # shellcheck source=/dev/null
+    . /etc/os-release
+
+    # Direct Ubuntu
+    if [[ "${ID:-}" == "ubuntu" ]]; then
+        return 0
+    fi
+
+    # Ubuntu-based distributions
+    if [[ "${ID_LIKE:-}" == *"ubuntu"* ]]; then
+        return 0
+    fi
+
+    # Known Ubuntu derivatives
+    case "${ID:-}" in
+        pop|linuxmint|kubuntu|xubuntu|lubuntu|elementary)
+            return 0
+            ;;
+    esac
+
+    return 1
 }
 
 ensure_php_prerequisites() {
@@ -46,6 +82,13 @@ ensure_php_prerequisites() {
 
 setup_ondrej_php_repository() {
     log_info "Setting up ondrej/php PPA for PHP ${PHP_VERSION}..."
+
+    # Verify Ubuntu compatibility before attempting PPA
+    if ! is_ubuntu_compatible; then
+        log_error "ondrej/php PPA requires Ubuntu or Ubuntu-based distribution"
+        log_error "Current system is not compatible with PPA"
+        return 1
+    fi
 
     # Robust check using compgen for safe glob expansion
     if compgen -G "/etc/apt/sources.list.d/*ondrej*php*.list" >/dev/null 2>&1 || \
@@ -333,45 +376,33 @@ configure_composer_path() {
     local zshrc="$target_home/.zshrc"
     local bashrc="$target_home/.bashrc"
 
-    # Modern Composer path
-    local composer_path_line='export PATH="$HOME/.config/composer/vendor/bin:$PATH"'
-    # Legacy Composer path
-    local legacy_path_line='export PATH="$HOME/.composer/vendor/bin:$PATH"'
+    # Modern Composer path configuration
+    local composer_config
+    composer_config='
+# Composer global bin
+export PATH="$HOME/.config/composer/vendor/bin:$PATH"'
 
-    # Add to .zshrc if exists
-    if [[ -f "$zshrc" ]]; then
-        add_composer_path_to_file "$zshrc" "$composer_path_line" "$legacy_path_line"
+    # Check if already configured (either modern or legacy path)
+    local marker=".config/composer/vendor/bin"
+    local legacy_marker=".composer/vendor/bin"
+
+    # Add to .zshrc (create if needed when zsh is user's shell)
+    if [[ -f "$zshrc" ]] || command_exists zsh; then
+        if ! grep -qF "$marker" "$zshrc" 2>/dev/null && \
+           ! grep -qF "$legacy_marker" "$zshrc" 2>/dev/null; then
+            if add_config_to_shell_file "$zshrc" "$composer_config" "$marker"; then
+                log_info "Added Composer PATH to .zshrc"
+            fi
+        fi
     fi
 
-    # Add to .bashrc if exists
-    if [[ -f "$bashrc" ]]; then
-        add_composer_path_to_file "$bashrc" "$composer_path_line" "$legacy_path_line"
+    # Add to .bashrc (create if needed)
+    if ! grep -qF "$marker" "$bashrc" 2>/dev/null && \
+       ! grep -qF "$legacy_marker" "$bashrc" 2>/dev/null; then
+        if add_config_to_shell_file "$bashrc" "$composer_config" "$marker"; then
+            log_info "Added Composer PATH to .bashrc"
+        fi
     fi
-}
-
-add_composer_path_to_file() {
-    local file="$1"
-    local modern_path="$2"
-    local legacy_path="$3"
-
-    # Check if either path is already configured
-    if grep -qF '.config/composer/vendor/bin' "$file" 2>/dev/null || \
-       grep -qF '.composer/vendor/bin' "$file" 2>/dev/null; then
-        return 0
-    fi
-
-    # Add modern path
-    if ! echo "$modern_path" >> "$file"; then
-        log_warning "Failed to add Composer path to $file"
-        return 1
-    fi
-
-    if ! ensure_target_ownership "$file"; then
-        log_warning "Failed to set ownership on $file"
-    fi
-
-    log_info "Added Composer global bin to PATH in $(basename "$file")"
-    return 0
 }
 
 install_symfony_cli() {
@@ -554,7 +585,8 @@ verify_php_extensions() {
     fi
 
     if [[ "$failed" == "true" ]]; then
-        log_warning "Some PHP extensions may not be loaded (non-critical)"
+        log_error "Required PHP extensions are missing"
+        return 1
     fi
 
     return 0
@@ -647,9 +679,14 @@ install_php() {
         return 1
     fi
 
-    # Set default PHP version
-    if ! set_default_php_version; then
-        log_warning "Failed to set default PHP version (non-critical)"
+    # Set default PHP version (if enabled, failure is critical)
+    if [[ "${SET_DEFAULT_PHP}" == "true" ]]; then
+        if ! set_default_php_version; then
+            log_error "Failed to set default PHP version"
+            return 1
+        fi
+    else
+        log_info "Skipping default PHP version configuration (SET_DEFAULT_PHP=false)"
     fi
 
     # Install Composer

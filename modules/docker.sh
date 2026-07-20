@@ -23,35 +23,31 @@ DOCKER_CONFLICT_PACKAGES=(
 
 get_ubuntu_codename() {
     # Source os-release to get distribution info
-    if [[ -f /etc/os-release ]]; then
-        # shellcheck source=/dev/null
-        . /etc/os-release
-
-        # Prefer UBUNTU_CODENAME (set by Ubuntu derivatives)
-        if [[ -n "${UBUNTU_CODENAME:-}" ]]; then
-            echo "$UBUNTU_CODENAME"
-            return 0
-        fi
-
-        # Fall back to VERSION_CODENAME
-        if [[ -n "${VERSION_CODENAME:-}" ]]; then
-            echo "$VERSION_CODENAME"
-            return 0
-        fi
+    if [[ ! -f /etc/os-release ]]; then
+        log_error "Cannot determine Ubuntu codename: /etc/os-release not found"
+        return 1
     fi
 
-    # Try lsb_release as fallback
-    if command_exists lsb_release; then
-        local codename
-        codename="$(lsb_release -cs 2>/dev/null)"
-        if [[ -n "$codename" ]]; then
-            echo "$codename"
-            return 0
-        fi
+    # shellcheck source=/dev/null
+    . /etc/os-release
+
+    local codename
+    # Use pure helper from lib/helpers.sh
+    if ! codename="$(resolve_ubuntu_codename "${ID:-}" "${ID_LIKE:-}" "${UBUNTU_CODENAME:-}" "${VERSION_CODENAME:-}")"; then
+        log_error "Could not determine Ubuntu codename"
+        log_error "This system may not be Ubuntu-based"
+        return 1
     fi
 
-    log_error "Could not determine Ubuntu codename"
-    return 1
+    # Validate codename against known valid Ubuntu codenames
+    if ! is_valid_ubuntu_codename "$codename"; then
+        log_warning "Unknown Ubuntu codename: $codename"
+        log_warning "This may indicate an unsupported distribution"
+        # Continue anyway - Docker may still work
+    fi
+
+    echo "$codename"
+    return 0
 }
 
 check_docker_conflicts() {
@@ -68,7 +64,10 @@ check_docker_conflicts() {
 
     if [[ ${#conflicts[@]} -gt 0 ]]; then
         log_error "Conflicting packages detected: ${conflicts[*]}"
-        log_error "Remove them first: sudo apt-get remove ${conflicts[*]}"
+        log_error "Review packages and remove manually:"
+        log_error "  sudo apt-get remove ${conflicts[*]}"
+        log_error "WARNING: This may affect other software depending on these packages."
+        log_error "Consider backing up before removal."
         return 1
     fi
 
@@ -162,29 +161,27 @@ enable_docker_service() {
 
     log_info "Enabling Docker service..."
 
-    # Check if systemctl is available
+    # Strict systemctl requirement - Docker requires systemd
     if ! command_exists systemctl; then
-        log_warning "systemctl not available, skipping service enable"
-        return 0
-    fi
-
-    # Enable and start Docker service
-    if ! systemctl enable docker; then
-        log_warning "Failed to enable Docker service"
-    fi
-
-    if ! systemctl start docker; then
-        log_error "Failed to start Docker service"
+        log_error "systemctl required for Docker service management"
+        log_error "Docker requires systemd-based init system"
         return 1
     fi
 
-    # Verify service is running
-    if systemctl is-active --quiet docker; then
-        log_success "Docker service enabled and running"
-    else
-        log_warning "Docker service enabled but not active"
+    # Atomic enable and start with --now
+    if ! systemctl enable --now docker; then
+        log_error "Failed to enable and start Docker service"
+        return 1
     fi
 
+    # Verify service is actually running
+    if ! systemctl is-active --quiet docker; then
+        log_error "Docker service failed to start"
+        log_error "Check: journalctl -u docker.service"
+        return 1
+    fi
+
+    log_success "Docker service enabled and running"
     return 0
 }
 
@@ -202,8 +199,8 @@ configure_docker_group() {
     # Create docker group if it doesn't exist
     if ! getent group docker >/dev/null 2>&1; then
         if ! groupadd docker; then
-            log_warning "Failed to create docker group"
-            return 0
+            log_error "Failed to create docker group"
+            return 1
         fi
         log_info "Docker group created"
     fi
@@ -216,8 +213,8 @@ configure_docker_group() {
 
     # Add user to docker group
     if ! usermod -aG docker "$target_user"; then
-        log_warning "Failed to add $target_user to docker group"
-        return 0
+        log_error "Failed to add $target_user to docker group"
+        return 1
     fi
 
     log_success "Added $target_user to docker group"
@@ -321,6 +318,12 @@ verify_docker_installation() {
 install_docker() {
     log_step "Installing Docker"
 
+    # Respect INSTALL_DOCKER_ENGINE=false
+    if [[ "${INSTALL_DOCKER_ENGINE}" != "true" ]]; then
+        log_info "Docker installation disabled (INSTALL_DOCKER_ENGINE=false)"
+        return 0
+    fi
+
     # Check architecture requirement
     if ! require_amd64 "Docker"; then
         return 1
@@ -355,8 +358,11 @@ install_docker() {
         return 1
     fi
 
-    # Configure Docker group
-    configure_docker_group
+    # Configure Docker group (failure is critical if enabled)
+    if ! configure_docker_group; then
+        log_error "Failed to configure Docker group"
+        return 1
+    fi
 
     # Run hello-world test (if enabled)
     run_hello_world_test

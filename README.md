@@ -85,7 +85,8 @@ Version control and collaboration tools (all required):
 ### php
 
 Complete PHP development environment for Laravel:
-- PHP (configurable version, default 8.4) via ondrej/php PPA
+- PHP via ondrej/php PPA (Ubuntu/Ubuntu-based only)
+- Supported versions: 8.2, 8.3, 8.4 (default: 8.4)
 - Extensions: cli, fpm, mysql, pgsql, sqlite3, curl, gd, intl, mbstring, xml, zip, bcmath, soap, readline, opcache
 - php-pear for PECL support
 - Composer (with SHA384 signature verification)
@@ -93,6 +94,8 @@ Complete PHP development environment for Laravel:
 - Symfony CLI
 - PECL imagick (optional, warns on failure)
 - Automatic default PHP version configuration via update-alternatives
+
+Note: PHP 8.0 and 8.1 are end-of-life and not supported.
 
 Configuration in `config.env`:
 ```bash
@@ -106,15 +109,17 @@ INSTALL_SYMFONY_CLI=true
 ### node
 
 Complete Node.js development environment:
-- NVM (Node Version Manager) for version management
+- NVM (Node Version Manager) via download-first installer
 - Node.js (configurable version: lts, latest, or specific version)
 - npm (bundled with Node.js)
-- pnpm via Corepack (with npm fallback)
-- Yarn via Corepack (with npm fallback)
-- Bun JavaScript runtime
+- pnpm via Corepack (strict - no fallback)
+- Yarn via Corepack (strict - no fallback)
+- Bun JavaScript runtime (download-first installer)
 - npm-check-updates global tool
 
 All tools are installed for the target user (not root).
+
+Shell RC files (.bashrc, .zshrc) are created if missing when configuring paths.
 
 Configuration in `config.env`:
 ```bash
@@ -134,10 +139,13 @@ Docker Engine with official repository (amd64 only):
 - containerd.io
 - Docker Compose plugin
 - Docker Buildx plugin
-- Automatic service enable/start
+- Automatic service enable/start (requires systemd)
 - Docker group configuration for non-root usage
 
-Note: Requires logout/login for docker group membership to take effect.
+Notes:
+- Set `INSTALL_DOCKER_ENGINE=false` to skip Docker installation entirely
+- Requires systemd for service management (strict requirement)
+- Requires logout/login for docker group membership to take effect
 
 Configuration in `config.env`:
 ```bash
@@ -147,6 +155,37 @@ INSTALL_DOCKER_BUILDX=true
 ENABLE_DOCKER_SERVICE=true
 ADD_USER_TO_DOCKER_GROUP=true
 RUN_DOCKER_HELLO_WORLD=false
+```
+
+### databases
+
+Database servers with service management:
+- MySQL Server (mysql-server, mysql-client)
+- PostgreSQL (postgresql, postgresql-contrib, postgresql-client)
+- Redis (redis-server, redis-tools)
+- SQLite (sqlite3, libsqlite3-dev)
+
+Notes:
+- Databases are installed with default configurations only
+- No automatic credential setup or security hardening
+- Security guidance is printed after installation
+- Requires systemd for service management
+
+Post-installation security recommendations:
+- MySQL: Run `sudo mysql_secure_installation`
+- PostgreSQL: Configure `/etc/postgresql/*/main/pg_hba.conf`
+- Redis: Set `requirepass` in `/etc/redis/redis.conf`
+
+Configuration in `config.env`:
+```bash
+INSTALL_MYSQL=true
+INSTALL_POSTGRESQL=true
+INSTALL_REDIS=true
+INSTALL_SQLITE=true
+ENABLE_MYSQL_SERVICE=true
+ENABLE_POSTGRESQL_SERVICE=true
+ENABLE_REDIS_SERVICE=true
+INSTALL_DATABASE_CLIENTS=true
 ```
 
 ### browsers
@@ -185,6 +224,7 @@ sudo ./install.sh --git
 sudo ./install.sh --php
 sudo ./install.sh --node
 sudo ./install.sh --docker
+sudo ./install.sh --databases
 sudo ./install.sh --browsers
 sudo ./install.sh --apps
 ```
@@ -194,7 +234,7 @@ Install multiple modules:
 ```bash
 sudo ./install.sh --system --terminal --git
 sudo ./install.sh --php --node --docker
-sudo ./install.sh --browsers --apps
+sudo ./install.sh --databases --browsers --apps
 ```
 
 ## Supported distributions

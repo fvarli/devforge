@@ -591,3 +591,117 @@ verify_command() {
 
     return 0
 }
+
+# Pure function: resolve Ubuntu codename from os-release values
+# Usage: resolve_ubuntu_codename ID ID_LIKE UBUNTU_CODENAME VERSION_CODENAME
+# Returns: codename on stdout, exit 0 on success, exit 1 on failure
+# This is a pure function that can be tested with fixture values
+resolve_ubuntu_codename() {
+    local id="$1"
+    local id_like="$2"
+    local ubuntu_codename="$3"
+    local version_codename="$4"
+
+    # Ubuntu and derivatives set UBUNTU_CODENAME
+    if [[ -n "$ubuntu_codename" ]]; then
+        echo "$ubuntu_codename"
+        return 0
+    fi
+
+    # Direct Ubuntu uses VERSION_CODENAME
+    if [[ "$id" == "ubuntu" ]] && [[ -n "$version_codename" ]]; then
+        echo "$version_codename"
+        return 0
+    fi
+
+    # Ubuntu derivatives with VERSION_CODENAME but no UBUNTU_CODENAME
+    # Only accept if ID_LIKE contains "ubuntu"
+    if [[ "$id_like" == *"ubuntu"* ]] && [[ -n "$version_codename" ]]; then
+        echo "$version_codename"
+        return 0
+    fi
+
+    # Known Ubuntu-based distributions
+    case "$id" in
+        pop|linuxmint|kubuntu|xubuntu|lubuntu|elementary)
+            if [[ -n "$version_codename" ]]; then
+                echo "$version_codename"
+                return 0
+            fi
+            ;;
+    esac
+
+    return 1
+}
+
+# Known valid Ubuntu codenames for Docker repository
+VALID_UBUNTU_CODENAMES=("focal" "jammy" "noble" "mantic" "lunar")
+
+is_valid_ubuntu_codename() {
+    local codename="$1"
+
+    local valid
+    for valid in "${VALID_UBUNTU_CODENAMES[@]}"; do
+        if [[ "$codename" == "$valid" ]]; then
+            return 0
+        fi
+    done
+
+    return 1
+}
+
+# Validate boolean configuration value
+# Returns 0 if value is valid boolean (true/false), 1 otherwise
+validate_boolean_config() {
+    local value="$1"
+    local config_name="${2:-config}"
+
+    case "$value" in
+        true|false)
+            return 0
+            ;;
+        *)
+            log_error "Invalid boolean value for $config_name: $value (must be 'true' or 'false')"
+            return 1
+            ;;
+    esac
+}
+
+# Add configuration to a shell RC file, creating it if missing
+# Usage: add_config_to_shell_file FILE CONFIG MARKER
+# - FILE: path to shell rc file (e.g., ~/.bashrc)
+# - CONFIG: multiline configuration to append
+# - MARKER: unique string to detect if config already present
+# Returns 0 on success, 1 on failure
+add_config_to_shell_file() {
+    local file="$1"
+    local config="$2"
+    local marker="$3"
+
+    # Create file if missing
+    if [[ ! -f "$file" ]]; then
+        if ! touch "$file"; then
+            log_error "Failed to create $file"
+            return 1
+        fi
+        if ! ensure_target_ownership "$file"; then
+            log_error "Failed to set ownership on $file"
+            return 1
+        fi
+        log_info "Created $(basename "$file")"
+    fi
+
+    # Add config if marker not present
+    if ! grep -qF "$marker" "$file" 2>/dev/null; then
+        if ! echo "$config" >> "$file"; then
+            log_error "Failed to append configuration to $file"
+            return 1
+        fi
+        if ! ensure_target_ownership "$file"; then
+            log_warning "Failed to ensure ownership on $file"
+        fi
+        log_info "Added configuration to $(basename "$file")"
+    fi
+
+    return 0
+}

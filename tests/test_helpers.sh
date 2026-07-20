@@ -321,17 +321,16 @@ test_php_version_validation() {
     # Source PHP module for validate_php_version function
     source "$DEVFORGE_ROOT/modules/php.sh"
 
-    # Valid versions
-    assert_command_succeeds "validate_php_version accepts 8.0" validate_php_version "8.0"
-    assert_command_succeeds "validate_php_version accepts 8.1" validate_php_version "8.1"
+    # Valid versions (only supported versions: 8.2, 8.3, 8.4)
     assert_command_succeeds "validate_php_version accepts 8.2" validate_php_version "8.2"
     assert_command_succeeds "validate_php_version accepts 8.3" validate_php_version "8.3"
     assert_command_succeeds "validate_php_version accepts 8.4" validate_php_version "8.4"
-    assert_command_succeeds "validate_php_version accepts 8.5" validate_php_version "8.5"
 
-    # Invalid versions
+    # Invalid versions (EOL versions rejected)
+    assert_command_fails "validate_php_version rejects 8.0 (EOL)" validate_php_version "8.0"
+    assert_command_fails "validate_php_version rejects 8.1 (EOL)" validate_php_version "8.1"
+    assert_command_fails "validate_php_version rejects 8.5 (future)" validate_php_version "8.5"
     assert_command_fails "validate_php_version rejects 7.4" validate_php_version "7.4"
-    assert_command_fails "validate_php_version rejects 8.6" validate_php_version "8.6"
     assert_command_fails "validate_php_version rejects 9.0" validate_php_version "9.0"
     assert_command_fails "validate_php_version rejects empty" validate_php_version ""
     assert_command_fails "validate_php_version rejects invalid format" validate_php_version "8"
@@ -362,9 +361,103 @@ test_node_version_validation() {
     assert_command_fails "validate_node_version rejects alpha suffix" validate_node_version "22.0.0-alpha"
 }
 
-# Test Ubuntu codename resolution
+# Test Ubuntu codename resolution (pure function)
+test_resolve_ubuntu_codename() {
+    log_step "Testing resolve_ubuntu_codename (pure function)"
+
+    local result
+
+    # Test 1: Ubuntu with UBUNTU_CODENAME set
+    result="$(resolve_ubuntu_codename "ubuntu" "" "jammy" "jammy")"
+    assert_equals "jammy" "$result" "resolve_ubuntu_codename: Ubuntu with UBUNTU_CODENAME" || true
+
+    # Test 2: Ubuntu without UBUNTU_CODENAME, use VERSION_CODENAME
+    result="$(resolve_ubuntu_codename "ubuntu" "" "" "noble")"
+    assert_equals "noble" "$result" "resolve_ubuntu_codename: Ubuntu using VERSION_CODENAME" || true
+
+    # Test 3: Pop!_OS derivative (id_like contains ubuntu)
+    result="$(resolve_ubuntu_codename "pop" "ubuntu debian" "jammy" "jammy")"
+    assert_equals "jammy" "$result" "resolve_ubuntu_codename: Pop!_OS with UBUNTU_CODENAME" || true
+
+    # Test 4: Linux Mint (known derivative)
+    result="$(resolve_ubuntu_codename "linuxmint" "ubuntu" "" "vera")"
+    assert_equals "vera" "$result" "resolve_ubuntu_codename: Linux Mint" || true
+
+    # Test 5: Kubuntu (known derivative)
+    result="$(resolve_ubuntu_codename "kubuntu" "" "" "noble")"
+    assert_equals "noble" "$result" "resolve_ubuntu_codename: Kubuntu" || true
+
+    # Test 6: ID_LIKE contains ubuntu
+    result="$(resolve_ubuntu_codename "elementary" "ubuntu gnome" "" "odin")"
+    assert_equals "odin" "$result" "resolve_ubuntu_codename: Elementary with ID_LIKE" || true
+
+    # Test 7: Fedora should fail
+    assert_command_fails "resolve_ubuntu_codename rejects Fedora" resolve_ubuntu_codename "fedora" "rhel" "" "39"
+
+    # Test 8: Arch should fail
+    assert_command_fails "resolve_ubuntu_codename rejects Arch" resolve_ubuntu_codename "arch" "" "" ""
+
+    # Test 9: Empty values should fail
+    assert_command_fails "resolve_ubuntu_codename rejects all empty" resolve_ubuntu_codename "" "" "" ""
+}
+
+# Test Ubuntu codename validation
+test_is_valid_ubuntu_codename() {
+    log_step "Testing is_valid_ubuntu_codename"
+
+    # Valid codenames
+    assert_command_succeeds "is_valid_ubuntu_codename accepts focal" is_valid_ubuntu_codename "focal"
+    assert_command_succeeds "is_valid_ubuntu_codename accepts jammy" is_valid_ubuntu_codename "jammy"
+    assert_command_succeeds "is_valid_ubuntu_codename accepts noble" is_valid_ubuntu_codename "noble"
+    assert_command_succeeds "is_valid_ubuntu_codename accepts mantic" is_valid_ubuntu_codename "mantic"
+    assert_command_succeeds "is_valid_ubuntu_codename accepts lunar" is_valid_ubuntu_codename "lunar"
+
+    # Invalid codenames
+    assert_command_fails "is_valid_ubuntu_codename rejects invalid" is_valid_ubuntu_codename "invalid"
+    assert_command_fails "is_valid_ubuntu_codename rejects empty" is_valid_ubuntu_codename ""
+    assert_command_fails "is_valid_ubuntu_codename rejects bionic" is_valid_ubuntu_codename "bionic"
+}
+
+# Test boolean config validation
+test_validate_boolean_config() {
+    log_step "Testing validate_boolean_config"
+
+    # Valid boolean values
+    assert_command_succeeds "validate_boolean_config accepts true" validate_boolean_config "true"
+    assert_command_succeeds "validate_boolean_config accepts false" validate_boolean_config "false"
+
+    # Invalid values
+    assert_command_fails "validate_boolean_config rejects yes" validate_boolean_config "yes"
+    assert_command_fails "validate_boolean_config rejects no" validate_boolean_config "no"
+    assert_command_fails "validate_boolean_config rejects 1" validate_boolean_config "1"
+    assert_command_fails "validate_boolean_config rejects 0" validate_boolean_config "0"
+    assert_command_fails "validate_boolean_config rejects TRUE" validate_boolean_config "TRUE"
+    assert_command_fails "validate_boolean_config rejects FALSE" validate_boolean_config "FALSE"
+    assert_command_fails "validate_boolean_config rejects empty" validate_boolean_config ""
+}
+
+# Test NVM version validation
+test_validate_nvm_version() {
+    log_step "Testing validate_nvm_version"
+
+    # Source Node module for validate_nvm_version function
+    source "$DEVFORGE_ROOT/modules/node.sh"
+
+    # Valid NVM versions
+    assert_command_succeeds "validate_nvm_version accepts v0.40.1" validate_nvm_version "v0.40.1"
+    assert_command_succeeds "validate_nvm_version accepts v0.39.7" validate_nvm_version "v0.39.7"
+    assert_command_succeeds "validate_nvm_version accepts v1.0.0" validate_nvm_version "v1.0.0"
+
+    # Invalid NVM versions
+    assert_command_fails "validate_nvm_version rejects no v prefix" validate_nvm_version "0.40.1"
+    assert_command_fails "validate_nvm_version rejects latest" validate_nvm_version "latest"
+    assert_command_fails "validate_nvm_version rejects empty" validate_nvm_version ""
+    assert_command_fails "validate_nvm_version rejects partial" validate_nvm_version "v0.40"
+}
+
+# Test Ubuntu codename resolution from docker module
 test_ubuntu_codename_resolution() {
-    log_step "Testing Ubuntu codename resolution"
+    log_step "Testing get_ubuntu_codename (integration)"
 
     # Source Docker module for get_ubuntu_codename function
     source "$DEVFORGE_ROOT/modules/docker.sh"
@@ -415,6 +508,10 @@ main() {
     test_run_selected_modules_behavior || true
     test_php_version_validation || true
     test_node_version_validation || true
+    test_resolve_ubuntu_codename || true
+    test_is_valid_ubuntu_codename || true
+    test_validate_boolean_config || true
+    test_validate_nvm_version || true
     test_ubuntu_codename_resolution || true
 
     print_test_summary
