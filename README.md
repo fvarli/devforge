@@ -82,6 +82,21 @@ Version control and collaboration tools (all required):
 - Automatic SSH directory setup (with proper permissions)
 - Minimal .gitconfig template (if not exists)
 
+### php
+
+Complete PHP development environment for Laravel:
+- PHP (configurable version, default 8.4) via ondrej/php PPA
+- Extensions: cli, fpm, mysql, pgsql, sqlite3, curl, gd, intl, mbstring, xml, zip, bcmath, soap, readline, opcache
+- Composer (with signature verification)
+- Laravel Installer (global, for target user)
+- Symfony CLI
+- PECL imagick (optional, warns on failure)
+
+Configuration in `config.env`:
+```bash
+PHP_VERSION=8.4
+```
+
 ### browsers
 
 Web browsers (amd64 only):
@@ -115,6 +130,7 @@ Install specific modules:
 sudo ./install.sh --system
 sudo ./install.sh --terminal
 sudo ./install.sh --git
+sudo ./install.sh --php
 sudo ./install.sh --browsers
 sudo ./install.sh --apps
 ```
@@ -123,7 +139,7 @@ Install multiple modules:
 
 ```bash
 sudo ./install.sh --system --terminal --git
-sudo ./install.sh --browsers --apps
+sudo ./install.sh --php --browsers --apps
 ```
 
 ## Supported distributions
