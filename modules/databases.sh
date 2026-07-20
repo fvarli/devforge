@@ -177,40 +177,54 @@ verify_mysql() {
     fi
 
     log_info "Verifying MySQL installation..."
+    local failed=false
 
-    # Verify mysql client
-    if command_exists mysql; then
-        local mysql_version
-        mysql_version="$(mysql --version 2>/dev/null)"
-        if [[ -n "$mysql_version" ]]; then
-            log_success "MySQL client verified: $mysql_version"
-        else
-            log_error "MySQL client version check failed"
-            return 1
-        fi
-    else
-        log_error "MySQL client not found"
-        return 1
-    fi
-
-    # Verify mysqld (server)
+    # REQUIRED: Verify mysqld (server binary)
     if command_exists mysqld; then
         local mysqld_version
         mysqld_version="$(mysqld --version 2>/dev/null | head -n1)"
         if [[ -n "$mysqld_version" ]]; then
             log_success "MySQL server verified: $mysqld_version"
-        fi
-    fi
-
-    # Verify service if enabled
-    if [[ "${ENABLE_MYSQL_SERVICE}" == "true" ]] && command_exists systemctl; then
-        if systemctl is-active --quiet mysql; then
-            log_success "MySQL service verified: running"
         else
-            log_warning "MySQL service is not running"
+            log_error "MySQL server version check failed"
+            failed=true
+        fi
+    else
+        log_error "MySQL server (mysqld) not found"
+        failed=true
+    fi
+
+    # REQUIRED when INSTALL_DATABASE_CLIENTS=true: Verify mysql client
+    if [[ "${INSTALL_DATABASE_CLIENTS}" == "true" ]]; then
+        if command_exists mysql; then
+            local mysql_version
+            mysql_version="$(mysql --version 2>/dev/null)"
+            if [[ -n "$mysql_version" ]]; then
+                log_success "MySQL client verified: $mysql_version"
+            else
+                log_error "MySQL client version check failed"
+                failed=true
+            fi
+        else
+            log_error "MySQL client not found"
+            failed=true
         fi
     fi
 
+    # STRICT: Verify service if enabled
+    if [[ "${ENABLE_MYSQL_SERVICE}" == "true" ]]; then
+        if ! command_exists systemctl; then
+            log_error "systemctl not available - cannot verify MySQL service"
+            failed=true
+        elif ! systemctl is-active --quiet mysql; then
+            log_error "MySQL service is not running"
+            failed=true
+        else
+            log_success "MySQL service verified: running"
+        fi
+    fi
+
+    [[ "$failed" == "true" ]] && return 1
     return 0
 }
 
@@ -220,42 +234,75 @@ verify_postgresql() {
     fi
 
     log_info "Verifying PostgreSQL installation..."
+    local failed=false
 
-    # Verify psql client
-    if command_exists psql; then
-        local psql_version
-        psql_version="$(psql --version 2>/dev/null)"
-        if [[ -n "$psql_version" ]]; then
-            log_success "PostgreSQL client verified: $psql_version"
+    # REQUIRED: Verify postgres or pg_ctl (server binary)
+    if command_exists postgres; then
+        local postgres_version
+        postgres_version="$(postgres --version 2>/dev/null)"
+        if [[ -n "$postgres_version" ]]; then
+            log_success "PostgreSQL server verified: $postgres_version"
         else
-            log_error "PostgreSQL client version check failed"
-            return 1
+            log_error "PostgreSQL server version check failed"
+            failed=true
+        fi
+    elif command_exists pg_ctl; then
+        local pg_ctl_version
+        pg_ctl_version="$(pg_ctl --version 2>/dev/null)"
+        if [[ -n "$pg_ctl_version" ]]; then
+            log_success "PostgreSQL server verified (via pg_ctl): $pg_ctl_version"
+        else
+            log_error "PostgreSQL server version check failed"
+            failed=true
         fi
     else
-        log_error "PostgreSQL client not found"
-        return 1
+        log_error "PostgreSQL server (postgres/pg_ctl) not found"
+        failed=true
     fi
 
-    # Check pg_isready if service is enabled
-    if [[ "${ENABLE_POSTGRESQL_SERVICE}" == "true" ]]; then
-        if command_exists pg_isready; then
-            if pg_isready >/dev/null 2>&1; then
-                log_success "PostgreSQL server verified: accepting connections"
+    # REQUIRED when INSTALL_DATABASE_CLIENTS=true: Verify psql client
+    if [[ "${INSTALL_DATABASE_CLIENTS}" == "true" ]]; then
+        if command_exists psql; then
+            local psql_version
+            psql_version="$(psql --version 2>/dev/null)"
+            if [[ -n "$psql_version" ]]; then
+                log_success "PostgreSQL client verified: $psql_version"
             else
-                log_warning "PostgreSQL server not accepting connections"
+                log_error "PostgreSQL client version check failed"
+                failed=true
+            fi
+        else
+            log_error "PostgreSQL client (psql) not found"
+            failed=true
+        fi
+
+        # Check pg_isready if service is enabled and clients installed
+        if [[ "${ENABLE_POSTGRESQL_SERVICE}" == "true" ]]; then
+            if command_exists pg_isready; then
+                if pg_isready >/dev/null 2>&1; then
+                    log_success "PostgreSQL server verified: accepting connections"
+                else
+                    log_error "PostgreSQL server not accepting connections"
+                    failed=true
+                fi
             fi
         fi
     fi
 
-    # Verify service if enabled
-    if [[ "${ENABLE_POSTGRESQL_SERVICE}" == "true" ]] && command_exists systemctl; then
-        if systemctl is-active --quiet postgresql; then
-            log_success "PostgreSQL service verified: running"
+    # STRICT: Verify service if enabled
+    if [[ "${ENABLE_POSTGRESQL_SERVICE}" == "true" ]]; then
+        if ! command_exists systemctl; then
+            log_error "systemctl not available - cannot verify PostgreSQL service"
+            failed=true
+        elif ! systemctl is-active --quiet postgresql; then
+            log_error "PostgreSQL service is not running"
+            failed=true
         else
-            log_warning "PostgreSQL service is not running"
+            log_success "PostgreSQL service verified: running"
         fi
     fi
 
+    [[ "$failed" == "true" ]] && return 1
     return 0
 }
 
@@ -265,8 +312,9 @@ verify_redis() {
     fi
 
     log_info "Verifying Redis installation..."
+    local failed=false
 
-    # Verify redis-server
+    # REQUIRED: Verify redis-server binary
     if command_exists redis-server; then
         local redis_version
         redis_version="$(redis-server --version 2>/dev/null)"
@@ -274,35 +322,48 @@ verify_redis() {
             log_success "Redis server verified: $redis_version"
         else
             log_error "Redis server version check failed"
-            return 1
+            failed=true
         fi
     else
         log_error "Redis server not found"
-        return 1
+        failed=true
     fi
 
-    # Verify redis-cli ping if service is enabled
-    if [[ "${ENABLE_REDIS_SERVICE}" == "true" ]]; then
+    # REQUIRED when INSTALL_DATABASE_CLIENTS=true: Verify redis-cli
+    if [[ "${INSTALL_DATABASE_CLIENTS}" == "true" ]]; then
         if command_exists redis-cli; then
-            local ping_response
-            ping_response="$(redis-cli ping 2>/dev/null)"
-            if [[ "$ping_response" == "PONG" ]]; then
-                log_success "Redis server verified: responding to ping"
-            else
-                log_warning "Redis server not responding to ping"
+            log_success "Redis client (redis-cli) verified"
+            # Verify redis-cli ping if service is enabled
+            if [[ "${ENABLE_REDIS_SERVICE}" == "true" ]]; then
+                local ping_response
+                ping_response="$(redis-cli ping 2>/dev/null)"
+                if [[ "$ping_response" == "PONG" ]]; then
+                    log_success "Redis server verified: responding to ping"
+                else
+                    log_error "Redis server not responding to ping"
+                    failed=true
+                fi
             fi
-        fi
-    fi
-
-    # Verify service if enabled
-    if [[ "${ENABLE_REDIS_SERVICE}" == "true" ]] && command_exists systemctl; then
-        if systemctl is-active --quiet redis-server; then
-            log_success "Redis service verified: running"
         else
-            log_warning "Redis service is not running"
+            log_error "Redis client (redis-cli) not found"
+            failed=true
         fi
     fi
 
+    # STRICT: Verify service if enabled
+    if [[ "${ENABLE_REDIS_SERVICE}" == "true" ]]; then
+        if ! command_exists systemctl; then
+            log_error "systemctl not available - cannot verify Redis service"
+            failed=true
+        elif ! systemctl is-active --quiet redis-server; then
+            log_error "Redis service is not running"
+            failed=true
+        else
+            log_success "Redis service verified: running"
+        fi
+    fi
+
+    [[ "$failed" == "true" ]] && return 1
     return 0
 }
 
@@ -312,8 +373,9 @@ verify_sqlite() {
     fi
 
     log_info "Verifying SQLite installation..."
+    local failed=false
 
-    # Verify sqlite3
+    # REQUIRED: Verify sqlite3 binary and functionality
     if command_exists sqlite3; then
         local sqlite_version
         sqlite_version="$(sqlite3 --version 2>/dev/null)"
@@ -321,13 +383,24 @@ verify_sqlite() {
             log_success "SQLite verified: $sqlite_version"
         else
             log_error "SQLite version check failed"
-            return 1
+            failed=true
+        fi
+
+        # Functional test with in-memory database
+        local test_result
+        test_result="$(sqlite3 ':memory:' 'SELECT 1;' 2>/dev/null)"
+        if [[ "$test_result" == "1" ]]; then
+            log_success "SQLite functional test passed"
+        else
+            log_error "SQLite functional test failed"
+            failed=true
         fi
     else
         log_error "SQLite not found"
-        return 1
+        failed=true
     fi
 
+    [[ "$failed" == "true" ]] && return 1
     return 0
 }
 
@@ -406,6 +479,20 @@ print_security_guidance() {
 
 install_databases() {
     log_step "Installing Database Servers"
+
+    # Validate boolean configurations
+    if ! validate_boolean_configs \
+        "INSTALL_MYSQL" "${INSTALL_MYSQL:-true}" \
+        "INSTALL_POSTGRESQL" "${INSTALL_POSTGRESQL:-true}" \
+        "INSTALL_REDIS" "${INSTALL_REDIS:-true}" \
+        "INSTALL_SQLITE" "${INSTALL_SQLITE:-true}" \
+        "ENABLE_MYSQL_SERVICE" "${ENABLE_MYSQL_SERVICE:-true}" \
+        "ENABLE_POSTGRESQL_SERVICE" "${ENABLE_POSTGRESQL_SERVICE:-true}" \
+        "ENABLE_REDIS_SERVICE" "${ENABLE_REDIS_SERVICE:-true}" \
+        "INSTALL_DATABASE_CLIENTS" "${INSTALL_DATABASE_CLIENTS:-true}"; then
+        log_error "Invalid boolean configuration in Databases module"
+        return 1
+    fi
 
     # Check if any databases are enabled
     if [[ "${INSTALL_MYSQL}" != "true" ]] && \

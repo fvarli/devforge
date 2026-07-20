@@ -362,8 +362,9 @@ test_node_version_validation() {
 }
 
 # Test Ubuntu codename resolution (pure function)
+# STRICT MODE: Derivatives WITHOUT UBUNTU_CODENAME must FAIL
 test_resolve_ubuntu_codename() {
-    log_step "Testing resolve_ubuntu_codename (pure function)"
+    log_step "Testing resolve_ubuntu_codename (pure function, strict mode)"
 
     local result
 
@@ -371,25 +372,27 @@ test_resolve_ubuntu_codename() {
     result="$(resolve_ubuntu_codename "ubuntu" "" "jammy" "jammy")"
     assert_equals "jammy" "$result" "resolve_ubuntu_codename: Ubuntu with UBUNTU_CODENAME" || true
 
-    # Test 2: Ubuntu without UBUNTU_CODENAME, use VERSION_CODENAME
+    # Test 2: Ubuntu without UBUNTU_CODENAME, use VERSION_CODENAME (direct Ubuntu)
     result="$(resolve_ubuntu_codename "ubuntu" "" "" "noble")"
     assert_equals "noble" "$result" "resolve_ubuntu_codename: Ubuntu using VERSION_CODENAME" || true
 
-    # Test 3: Pop!_OS derivative (id_like contains ubuntu)
+    # Test 3: Pop!_OS derivative WITH UBUNTU_CODENAME (should work)
     result="$(resolve_ubuntu_codename "pop" "ubuntu debian" "jammy" "jammy")"
     assert_equals "jammy" "$result" "resolve_ubuntu_codename: Pop!_OS with UBUNTU_CODENAME" || true
 
-    # Test 4: Linux Mint (known derivative)
-    result="$(resolve_ubuntu_codename "linuxmint" "ubuntu" "" "vera")"
-    assert_equals "vera" "$result" "resolve_ubuntu_codename: Linux Mint" || true
+    # Test 4: Linux Mint WITHOUT UBUNTU_CODENAME - MUST FAIL (strict)
+    # Linux Mint's VERSION_CODENAME "vera" is NOT valid for Docker repo
+    assert_command_fails "resolve_ubuntu_codename rejects Mint without UBUNTU_CODENAME" \
+        resolve_ubuntu_codename "linuxmint" "ubuntu" "" "vera"
 
-    # Test 5: Kubuntu (known derivative)
-    result="$(resolve_ubuntu_codename "kubuntu" "" "" "noble")"
-    assert_equals "noble" "$result" "resolve_ubuntu_codename: Kubuntu" || true
+    # Test 5: Kubuntu WITHOUT UBUNTU_CODENAME - MUST FAIL (strict)
+    # Known derivative without UBUNTU_CODENAME cannot be trusted
+    assert_command_fails "resolve_ubuntu_codename rejects derivative without UBUNTU_CODENAME" \
+        resolve_ubuntu_codename "kubuntu" "" "" "noble"
 
-    # Test 6: ID_LIKE contains ubuntu
-    result="$(resolve_ubuntu_codename "elementary" "ubuntu gnome" "" "odin")"
-    assert_equals "odin" "$result" "resolve_ubuntu_codename: Elementary with ID_LIKE" || true
+    # Test 6: Elementary WITHOUT UBUNTU_CODENAME - MUST FAIL (strict)
+    assert_command_fails "resolve_ubuntu_codename rejects elementary without UBUNTU_CODENAME" \
+        resolve_ubuntu_codename "elementary" "ubuntu gnome" "" "odin"
 
     # Test 7: Fedora should fail
     assert_command_fails "resolve_ubuntu_codename rejects Fedora" resolve_ubuntu_codename "fedora" "rhel" "" "39"
@@ -399,6 +402,39 @@ test_resolve_ubuntu_codename() {
 
     # Test 9: Empty values should fail
     assert_command_fails "resolve_ubuntu_codename rejects all empty" resolve_ubuntu_codename "" "" "" ""
+
+    # Test 10: CachyOS should fail (not Ubuntu-based)
+    assert_command_fails "resolve_ubuntu_codename rejects CachyOS" \
+        resolve_ubuntu_codename "cachyos" "arch" "" ""
+}
+
+# Test validate_boolean_configs (multi-config validation)
+test_validate_boolean_configs() {
+    log_step "Testing validate_boolean_configs"
+
+    # All valid configs
+    assert_command_succeeds "validate_boolean_configs accepts all valid" \
+        validate_boolean_configs \
+            "CONFIG1" "true" \
+            "CONFIG2" "false" \
+            "CONFIG3" "true"
+
+    # One invalid config
+    assert_command_fails "validate_boolean_configs rejects one invalid" \
+        validate_boolean_configs \
+            "CONFIG1" "true" \
+            "CONFIG2" "yes" \
+            "CONFIG3" "false"
+
+    # All invalid
+    assert_command_fails "validate_boolean_configs rejects all invalid" \
+        validate_boolean_configs \
+            "CONFIG1" "YES" \
+            "CONFIG2" "NO"
+
+    # Empty call succeeds (no configs to validate)
+    assert_command_succeeds "validate_boolean_configs accepts empty" \
+        validate_boolean_configs
 }
 
 # Test Ubuntu codename validation
@@ -511,6 +547,7 @@ main() {
     test_resolve_ubuntu_codename || true
     test_is_valid_ubuntu_codename || true
     test_validate_boolean_config || true
+    test_validate_boolean_configs || true
     test_validate_nvm_version || true
     test_ubuntu_codename_resolution || true
 

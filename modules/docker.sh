@@ -39,11 +39,13 @@ get_ubuntu_codename() {
         return 1
     fi
 
-    # Validate codename against known valid Ubuntu codenames
+    # STRICT validation - unknown codenames FAIL
+    # Docker repository requires known Ubuntu codenames
     if ! is_valid_ubuntu_codename "$codename"; then
-        log_warning "Unknown Ubuntu codename: $codename"
-        log_warning "This may indicate an unsupported distribution"
-        # Continue anyway - Docker may still work
+        log_error "Unknown/unsupported Ubuntu codename: $codename"
+        log_error "Supported codenames: ${VALID_UBUNTU_CODENAMES[*]}"
+        log_error "Docker repository may not have packages for this release"
+        return 1
     fi
 
     echo "$codename"
@@ -245,7 +247,7 @@ verify_docker_installation() {
 
     local failed=false
 
-    # Verify Docker Engine
+    # Verify Docker Engine (REQUIRED)
     if command_exists docker; then
         local docker_version
         docker_version="$(docker --version 2>/dev/null)"
@@ -260,20 +262,22 @@ verify_docker_installation() {
         failed=true
     fi
 
-    # Verify containerd
+    # Verify containerd (REQUIRED)
     if command_exists containerd; then
         local containerd_version
         containerd_version="$(containerd --version 2>/dev/null | head -n1)"
         if [[ -n "$containerd_version" ]]; then
             log_success "containerd verified: $containerd_version"
         else
-            log_warning "containerd version check failed"
+            log_error "containerd version check failed"
+            failed=true
         fi
     else
-        log_warning "containerd command not found"
+        log_error "containerd command not found"
+        failed=true
     fi
 
-    # Verify Docker Compose (if enabled)
+    # Verify Docker Compose (REQUIRED when enabled)
     if [[ "${INSTALL_DOCKER_COMPOSE}" == "true" ]]; then
         if docker compose version >/dev/null 2>&1; then
             local compose_version
@@ -285,7 +289,7 @@ verify_docker_installation() {
         fi
     fi
 
-    # Verify Docker Buildx (if enabled)
+    # Verify Docker Buildx (REQUIRED when enabled)
     if [[ "${INSTALL_DOCKER_BUILDX}" == "true" ]]; then
         if docker buildx version >/dev/null 2>&1; then
             local buildx_version
@@ -297,14 +301,28 @@ verify_docker_installation() {
         fi
     fi
 
-    # Verify Docker service (if enabled)
+    # STRICT service verification (REQUIRED when enabled)
     if [[ "${ENABLE_DOCKER_SERVICE}" == "true" ]]; then
-        if command_exists systemctl; then
-            if systemctl is-active --quiet docker; then
-                log_success "Docker service verified: running"
-            else
-                log_warning "Docker service is not running"
-            fi
+        if ! command_exists systemctl; then
+            log_error "systemctl not available - cannot verify Docker service"
+            failed=true
+        elif ! systemctl is-active --quiet docker; then
+            log_error "Docker service is not running"
+            failed=true
+        else
+            log_success "Docker service verified: running"
+        fi
+    fi
+
+    # STRICT group membership verification (REQUIRED when enabled)
+    if [[ "${ADD_USER_TO_DOCKER_GROUP}" == "true" ]]; then
+        local target_user
+        target_user="$(get_target_user)"
+        if id -nG "$target_user" 2>/dev/null | grep -qw docker; then
+            log_success "Docker group membership verified for $target_user"
+        else
+            log_error "User $target_user not in docker group"
+            failed=true
         fi
     fi
 
@@ -317,6 +335,18 @@ verify_docker_installation() {
 
 install_docker() {
     log_step "Installing Docker"
+
+    # Validate boolean configurations
+    if ! validate_boolean_configs \
+        "INSTALL_DOCKER_ENGINE" "${INSTALL_DOCKER_ENGINE:-true}" \
+        "INSTALL_DOCKER_COMPOSE" "${INSTALL_DOCKER_COMPOSE:-true}" \
+        "INSTALL_DOCKER_BUILDX" "${INSTALL_DOCKER_BUILDX:-true}" \
+        "ENABLE_DOCKER_SERVICE" "${ENABLE_DOCKER_SERVICE:-true}" \
+        "ADD_USER_TO_DOCKER_GROUP" "${ADD_USER_TO_DOCKER_GROUP:-true}" \
+        "RUN_DOCKER_HELLO_WORLD" "${RUN_DOCKER_HELLO_WORLD:-false}"; then
+        log_error "Invalid boolean configuration in Docker module"
+        return 1
+    fi
 
     # Respect INSTALL_DOCKER_ENGINE=false
     if [[ "${INSTALL_DOCKER_ENGINE}" != "true" ]]; then

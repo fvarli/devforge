@@ -1,0 +1,80 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  syntax-check:
+    name: Syntax Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check bash syntax
+        run: |
+          bash -n install.sh
+          bash -n lib/*.sh
+          bash -n modules/*.sh
+          bash -n tests/*.sh
+
+  shellcheck:
+    name: ShellCheck
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install ShellCheck
+        run: sudo apt-get install -y shellcheck
+
+      - name: Run ShellCheck
+        run: |
+          shellcheck --version
+          echo "---"
+          shellcheck install.sh lib/*.sh modules/*.sh
+
+  unit-tests:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run helper tests
+        run: bash tests/test_helpers.sh
+
+      - name: Run syntax checks
+        run: |
+          if [[ -f tests/run_syntax_checks.sh ]]; then
+            bash tests/run_syntax_checks.sh
+          fi
+
+  doctor-tests:
+    name: Doctor Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run doctor tests
+        run: bash tests/test_doctor.sh
+
+  doctor-command:
+    name: Doctor Command
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Create config
+        run: cp config.env.example config.env
+
+      - name: Run doctor command
+        run: |
+          # Run doctor command (should exit with 1 since nothing is installed)
+          # We're just verifying it runs without crashing
+          ./install.sh --doctor || true

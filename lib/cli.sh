@@ -20,6 +20,7 @@ SHOW_HELP=false
 SHOW_VERSION=false
 INSTALL_ALL=false
 INTERACTIVE_MODE=false
+RUN_DOCTOR=false
 
 print_help() {
     cat <<EOF
@@ -40,6 +41,7 @@ Options:
   --browsers         Enable browser module
   --apps             Enable desktop applications module
   --interactive      Start interactive module selection
+  --doctor           Run diagnostic checks (no installation, no root required)
   --help, -h         Show this help message
   --version, -v      Show DevForge version
 
@@ -143,6 +145,9 @@ parse_arguments() {
                 ;;
             --interactive)
                 INTERACTIVE_MODE=true
+                ;;
+            --doctor|doctor)
+                RUN_DOCTOR=true
                 ;;
             --help|-h)
                 SHOW_HELP=true

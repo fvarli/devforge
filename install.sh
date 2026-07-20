@@ -26,6 +26,9 @@ source "$DEVFORGE_ROOT/lib/flatpak.sh"
 # shellcheck source=lib/metrics.sh
 source "$DEVFORGE_ROOT/lib/metrics.sh"
 
+# shellcheck source=lib/doctor.sh
+source "$DEVFORGE_ROOT/lib/doctor.sh"
+
 on_error() {
     local exit_code=$?
     local line_number="${1:-unknown}"
@@ -79,6 +82,16 @@ main() {
     if [[ "$SHOW_VERSION" == "true" ]]; then
         print_version
         exit 0
+    fi
+
+    # Doctor mode - does NOT require root
+    if [[ "$RUN_DOCTOR" == "true" ]]; then
+        load_configuration
+        if run_doctor; then
+            exit 0
+        else
+            exit 1
+        fi
     fi
 
     print_banner

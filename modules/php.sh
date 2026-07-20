@@ -343,8 +343,11 @@ install_laravel_installer() {
         return 1
     fi
 
-    # Configure PATH for composer global binaries
-    configure_composer_path
+    # Configure PATH for composer global binaries (REQUIRED)
+    if ! configure_composer_path; then
+        log_error "Failed to configure Composer PATH"
+        return 1
+    fi
 
     # Refresh bin path after installation
     composer_bin_path="$(get_composer_global_bin)"
@@ -376,33 +379,53 @@ configure_composer_path() {
     local zshrc="$target_home/.zshrc"
     local bashrc="$target_home/.bashrc"
 
-    # Modern Composer path configuration
+    # Get resolved Composer global bin path
+    local composer_bin_path
+    composer_bin_path="$(get_composer_global_bin)"
+
+    if [[ -z "$composer_bin_path" ]]; then
+        log_error "Could not determine Composer global bin path"
+        return 1
+    fi
+
+    # Use resolved path in configuration
     local composer_config
-    composer_config='
+    composer_config="
 # Composer global bin
-export PATH="$HOME/.config/composer/vendor/bin:$PATH"'
+export PATH=\"$composer_bin_path:\$PATH\""
 
     # Check if already configured (either modern or legacy path)
     local marker=".config/composer/vendor/bin"
     local legacy_marker=".composer/vendor/bin"
 
-    # Add to .zshrc (create if needed when zsh is user's shell)
+    local failed=false
+
+    # Add to .bashrc (REQUIRED)
+    if ! grep -qF "$marker" "$bashrc" 2>/dev/null && \
+       ! grep -qF "$legacy_marker" "$bashrc" 2>/dev/null; then
+        if ! add_config_to_shell_file "$bashrc" "$composer_config" "$marker"; then
+            log_error "Failed to add Composer PATH to .bashrc"
+            failed=true
+        else
+            log_info "Added Composer PATH to .bashrc"
+        fi
+    fi
+
+    # Add to .zshrc (if zsh is available)
     if [[ -f "$zshrc" ]] || command_exists zsh; then
         if ! grep -qF "$marker" "$zshrc" 2>/dev/null && \
            ! grep -qF "$legacy_marker" "$zshrc" 2>/dev/null; then
-            if add_config_to_shell_file "$zshrc" "$composer_config" "$marker"; then
+            if ! add_config_to_shell_file "$zshrc" "$composer_config" "$marker"; then
+                log_error "Failed to add Composer PATH to .zshrc"
+                failed=true
+            else
                 log_info "Added Composer PATH to .zshrc"
             fi
         fi
     fi
 
-    # Add to .bashrc (create if needed)
-    if ! grep -qF "$marker" "$bashrc" 2>/dev/null && \
-       ! grep -qF "$legacy_marker" "$bashrc" 2>/dev/null; then
-        if add_config_to_shell_file "$bashrc" "$composer_config" "$marker"; then
-            log_info "Added Composer PATH to .bashrc"
-        fi
-    fi
+    [[ "$failed" == "true" ]] && return 1
+    return 0
 }
 
 install_symfony_cli() {
@@ -441,19 +464,26 @@ install_symfony_cli() {
         return 1
     fi
 
-    # Find the downloaded binary (may be in tmp_dir or tmp_dir/.symfony*/bin)
+    # Check deterministic paths only (no broad find)
     local found_binary=""
-    if [[ -f "$tmp_dir/symfony" ]]; then
-        found_binary="$tmp_dir/symfony"
-    elif [[ -f "$tmp_dir/.symfony5/bin/symfony" ]]; then
-        found_binary="$tmp_dir/.symfony5/bin/symfony"
-    else
-        # Search for it
-        found_binary="$(find "$tmp_dir" -name 'symfony' -type f -executable 2>/dev/null | head -n1)"
-    fi
+    local check_paths=(
+        "$tmp_dir/symfony"
+        "$tmp_dir/bin/symfony"
+        "$tmp_dir/.symfony5/bin/symfony"
+        "$tmp_dir/.symfony/bin/symfony"
+    )
 
-    if [[ -z "$found_binary" || ! -f "$found_binary" ]]; then
-        log_error "Symfony binary not found after installation"
+    local path
+    for path in "${check_paths[@]}"; do
+        if [[ -f "$path" && -x "$path" ]]; then
+            found_binary="$path"
+            break
+        fi
+    done
+
+    if [[ -z "$found_binary" ]]; then
+        log_error "Symfony binary not found in expected locations"
+        log_error "Checked: ${check_paths[*]}"
         cleanup_temp_dir "$tmp_dir"
         return 1
     fi
@@ -467,8 +497,14 @@ install_symfony_cli() {
 
     cleanup_temp_dir "$tmp_dir"
 
-    # Verify installation
-    if ! command_exists symfony; then
+    # Verify installation at expected location
+    if [[ ! -x "/usr/local/bin/symfony" ]]; then
+        log_error "Symfony CLI not found at /usr/local/bin/symfony"
+        return 1
+    fi
+
+    # Verify command works
+    if ! /usr/local/bin/symfony version >/dev/null 2>&1; then
         log_error "Symfony CLI installation verification failed"
         return 1
     fi
@@ -550,6 +586,13 @@ install_pecl_imagick() {
 verify_php_extensions() {
     log_info "Verifying PHP extensions..."
 
+    # Run php -m once and store output
+    local php_modules
+    if ! php_modules="$("php${PHP_VERSION}" -m 2>/dev/null)"; then
+        log_error "Failed to get PHP modules list"
+        return 1
+    fi
+
     local required_extensions=(
         bcmath
         curl
@@ -568,19 +611,19 @@ verify_php_extensions() {
     local extension
 
     for extension in "${required_extensions[@]}"; do
-        if "php${PHP_VERSION}" -m 2>/dev/null | grep -qi "^${extension}$"; then
+        if echo "$php_modules" | grep -qi "^${extension}$"; then
             log_info "Extension $extension: OK"
         else
-            log_warning "Extension $extension: NOT LOADED"
+            log_error "Extension $extension: NOT LOADED"
             failed=true
         fi
     done
 
     # Check OPcache separately (listed as "Zend OPcache" in php -m)
-    if "php${PHP_VERSION}" -m 2>/dev/null | grep -qi "Zend OPcache"; then
+    if echo "$php_modules" | grep -qi "Zend OPcache"; then
         log_info "Extension opcache: OK"
     else
-        log_warning "Extension opcache: NOT LOADED"
+        log_error "Extension opcache: NOT LOADED"
         failed=true
     fi
 
@@ -643,8 +686,10 @@ verify_php_installation() {
         fi
     fi
 
-    # Verify extensions
-    verify_php_extensions
+    # Verify extensions (REQUIRED)
+    if ! verify_php_extensions; then
+        failed=true
+    fi
 
     if [[ "$failed" == "true" ]]; then
         return 1
@@ -655,6 +700,16 @@ verify_php_installation() {
 
 install_php() {
     log_step "Installing PHP ${PHP_VERSION} development environment"
+
+    # Validate boolean configurations
+    if ! validate_boolean_configs \
+        "SET_DEFAULT_PHP" "${SET_DEFAULT_PHP:-true}" \
+        "INSTALL_PHP_IMAGICK" "${INSTALL_PHP_IMAGICK:-true}" \
+        "INSTALL_LARAVEL_INSTALLER" "${INSTALL_LARAVEL_INSTALLER:-true}" \
+        "INSTALL_SYMFONY_CLI" "${INSTALL_SYMFONY_CLI:-true}"; then
+        log_error "Invalid boolean configuration in PHP module"
+        return 1
+    fi
 
     # Validate PHP version
     if ! validate_php_version "$PHP_VERSION"; then

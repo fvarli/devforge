@@ -596,13 +596,18 @@ verify_command() {
 # Usage: resolve_ubuntu_codename ID ID_LIKE UBUNTU_CODENAME VERSION_CODENAME
 # Returns: codename on stdout, exit 0 on success, exit 1 on failure
 # This is a pure function that can be tested with fixture values
+#
+# CRITICAL: For Docker repository compatibility, we must return actual Ubuntu
+# codenames (jammy, noble, etc.), NOT derivative codenames (vera, odin, etc.).
+# Derivatives MUST have UBUNTU_CODENAME set to be used with Docker.
 resolve_ubuntu_codename() {
     local id="$1"
     local id_like="$2"
     local ubuntu_codename="$3"
     local version_codename="$4"
 
-    # Ubuntu and derivatives set UBUNTU_CODENAME
+    # UBUNTU_CODENAME is authoritative when present
+    # This is set by Ubuntu and properly-configured derivatives
     if [[ -n "$ubuntu_codename" ]]; then
         echo "$ubuntu_codename"
         return 0
@@ -614,23 +619,28 @@ resolve_ubuntu_codename() {
         return 0
     fi
 
-    # Ubuntu derivatives with VERSION_CODENAME but no UBUNTU_CODENAME
-    # Only accept if ID_LIKE contains "ubuntu"
-    if [[ "$id_like" == *"ubuntu"* ]] && [[ -n "$version_codename" ]]; then
-        echo "$version_codename"
-        return 0
-    fi
-
-    # Known Ubuntu-based distributions
+    # Check if this is a known Ubuntu derivative
+    local is_derivative=false
     case "$id" in
         pop|linuxmint|kubuntu|xubuntu|lubuntu|elementary)
-            if [[ -n "$version_codename" ]]; then
-                echo "$version_codename"
-                return 0
-            fi
+            is_derivative=true
             ;;
     esac
 
+    if [[ "$id_like" == *"ubuntu"* ]]; then
+        is_derivative=true
+    fi
+
+    # CRITICAL: Derivatives WITHOUT UBUNTU_CODENAME cannot be trusted
+    # Their VERSION_CODENAME refers to the derivative release, not Ubuntu
+    # Examples: Linux Mint "vera", elementary "odin", Pop!_OS custom codenames
+    if [[ "$is_derivative" == "true" ]]; then
+        # Derivative without UBUNTU_CODENAME - FAIL
+        # Docker repository requires actual Ubuntu codenames
+        return 1
+    fi
+
+    # Not Ubuntu or Ubuntu derivative - FAIL
     return 1
 }
 
@@ -665,6 +675,30 @@ validate_boolean_config() {
             return 1
             ;;
     esac
+}
+
+# Validate multiple boolean configuration values
+# Usage: validate_boolean_configs "CONFIG1" "$CONFIG1" "CONFIG2" "$CONFIG2" ...
+# Arguments are pairs of (name, value)
+# Returns 0 if all valid, 1 if any invalid
+validate_boolean_configs() {
+    local failed=false
+
+    while [[ $# -ge 2 ]]; do
+        local config_name="$1"
+        local config_value="$2"
+        shift 2
+
+        if ! validate_boolean_config "$config_value" "$config_name"; then
+            failed=true
+        fi
+    done
+
+    if [[ "$failed" == "true" ]]; then
+        return 1
+    fi
+
+    return 0
 }
 
 # Add configuration to a shell RC file, creating it if missing

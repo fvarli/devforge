@@ -138,9 +138,10 @@ install_nvm() {
         return 1
     fi
 
-    # Configure shell rc files idempotently
+    # Configure shell rc files idempotently (REQUIRED)
     if ! configure_nvm_shell; then
-        log_warning "Failed to configure shell for NVM"
+        log_error "Failed to configure shell for NVM"
+        return 1
     fi
 
     log_success "NVM ${NVM_VERSION} installed"
@@ -181,17 +182,23 @@ export NVM_DIR="$HOME/.nvm"
 }
 
 # Check if a specific Node version is already installed via NVM
+# Uses deterministic NVM version resolution instead of loose grep patterns
 node_version_installed() {
     local version="$1"
+    local resolved_version
 
-    # For lts/latest, check if nvm ls shows any matching version
     if [[ "$version" == "lts" ]]; then
-        run_with_nvm nvm ls --no-colors 2>/dev/null | grep -q "lts"
+        # Check if LTS version is installed
+        resolved_version="$(run_with_nvm nvm version 'lts/*' 2>/dev/null)"
+        [[ -n "$resolved_version" && "$resolved_version" != "N/A" ]]
     elif [[ "$version" == "latest" ]]; then
-        run_with_nvm nvm ls --no-colors 2>/dev/null | grep -q "node"
+        # Check if latest (node) version is installed
+        resolved_version="$(run_with_nvm nvm version node 2>/dev/null)"
+        [[ -n "$resolved_version" && "$resolved_version" != "N/A" ]]
     else
-        # For specific version, check if it's installed
-        run_with_nvm nvm ls "$version" --no-colors 2>/dev/null | grep -qv "N/A"
+        # For specific version, use nvm version to resolve
+        resolved_version="$(run_with_nvm nvm version "$version" 2>/dev/null)"
+        [[ -n "$resolved_version" && "$resolved_version" != "N/A" ]]
     fi
 }
 
@@ -410,9 +417,10 @@ install_bun() {
         return 1
     fi
 
-    # Configure PATH in shell rc files
+    # Configure PATH in shell rc files (REQUIRED)
     if ! configure_bun_path; then
-        log_warning "Failed to configure shell for Bun"
+        log_error "Failed to configure shell for Bun"
+        return 1
     fi
 
     # Get version
@@ -567,6 +575,16 @@ verify_node_installation() {
 
 install_node() {
     log_step "Installing Node.js development environment"
+
+    # Validate boolean configurations
+    if ! validate_boolean_configs \
+        "INSTALL_NPM_GLOBAL_TOOLS" "${INSTALL_NPM_GLOBAL_TOOLS:-true}" \
+        "INSTALL_PNPM" "${INSTALL_PNPM:-true}" \
+        "INSTALL_YARN" "${INSTALL_YARN:-true}" \
+        "INSTALL_BUN" "${INSTALL_BUN:-true}"; then
+        log_error "Invalid boolean configuration in Node module"
+        return 1
+    fi
 
     # Validate configuration
     if [[ "$NODE_INSTALL_METHOD" != "nvm" ]]; then

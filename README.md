@@ -1,5 +1,7 @@
 # DevForge
 
+![CI](https://github.com/fvarli/devforge/workflows/CI/badge.svg)
+
 Modular developer workstation bootstrap for Ubuntu-based Linux distributions.
 
 ## Current status
