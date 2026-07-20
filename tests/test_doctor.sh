@@ -360,6 +360,84 @@ test_doctor_counters_strict_mode() {
     fi
 }
 
+# Test health score calculation edge cases
+test_doctor_health_score() {
+    log_step "Testing doctor health score calculation"
+
+    # Source summary.sh if not already loaded
+    # shellcheck source=../doctor/summary.sh
+    if ! declare -f doctor_print_summary >/dev/null 2>&1; then
+        source "$DEVFORGE_ROOT/doctor/summary.sh"
+    fi
+
+    local output
+
+    # Test 100% health score (all passes)
+    DOCTOR_CHECKS_TOTAL=10
+    DOCTOR_CHECKS_PASSED=10
+    DOCTOR_CHECKS_WARNINGS=0
+    DOCTOR_CHECKS_FAILED=0
+
+    output="$(doctor_print_summary 2>&1)" || true
+    increment_tests_run
+    if echo "$output" | grep -q "Health Score:.*100%"; then
+        increment_tests_passed
+        log_success "Health score 100% when all passes"
+    else
+        increment_tests_failed
+        log_error "Health score 100% when all passes"
+    fi
+
+    # Test 0% health score (all failures)
+    DOCTOR_CHECKS_TOTAL=5
+    DOCTOR_CHECKS_PASSED=0
+    DOCTOR_CHECKS_WARNINGS=0
+    DOCTOR_CHECKS_FAILED=5
+
+    output="$(doctor_print_summary 2>&1)" || true
+    increment_tests_run
+    if echo "$output" | grep -q "Health Score:.*0%"; then
+        increment_tests_passed
+        log_success "Health score 0% when all failures"
+    else
+        increment_tests_failed
+        log_error "Health score 0% when all failures"
+    fi
+
+    # Test warnings-only (warnings count toward denominator but not score)
+    DOCTOR_CHECKS_TOTAL=5
+    DOCTOR_CHECKS_PASSED=3
+    DOCTOR_CHECKS_WARNINGS=2
+    DOCTOR_CHECKS_FAILED=0
+
+    output="$(doctor_print_summary 2>&1)" || true
+    increment_tests_run
+    # 3 / (3 + 2 + 0) = 3/5 = 60%
+    if echo "$output" | grep -q "Health Score:.*60%"; then
+        increment_tests_passed
+        log_success "Health score 60% with warnings"
+    else
+        increment_tests_failed
+        log_error "Health score 60% with warnings"
+    fi
+
+    # Test division by zero protection (all zeros)
+    DOCTOR_CHECKS_TOTAL=0
+    DOCTOR_CHECKS_PASSED=0
+    DOCTOR_CHECKS_WARNINGS=0
+    DOCTOR_CHECKS_FAILED=0
+
+    output="$(doctor_print_summary 2>&1)" || true
+    increment_tests_run
+    if echo "$output" | grep -q "Health Score:.*0%"; then
+        increment_tests_passed
+        log_success "Health score 0% when no checks (division by zero protection)"
+    else
+        increment_tests_failed
+        log_error "Health score 0% when no checks (division by zero protection)"
+    fi
+}
+
 # Print test summary
 print_test_summary() {
     printf "\n"
@@ -390,6 +468,7 @@ main() {
     test_doctor_no_side_effects || true
     test_doctor_summary_format || true
     test_doctor_output_prefixes || true
+    test_doctor_health_score || true
 
     print_test_summary
 }

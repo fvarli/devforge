@@ -5,3 +5,7 @@ logs/*.log
 *.swp
 .DS_Store
 .idea
+
+# Generated report files
+*-diff.txt
+doctor_output.txt

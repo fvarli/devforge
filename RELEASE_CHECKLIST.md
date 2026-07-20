@@ -48,6 +48,17 @@ Pre-release verification checklist for DevForge.
   - [ ] `mysql --version`
   - [ ] `psql --version`
 
+### Post-Reboot Verification
+
+After rebooting the VM:
+
+- [ ] Docker group membership active (`groups` shows docker)
+- [ ] Docker works without sudo (`docker run hello-world`)
+- [ ] NVM loads in new shell (`nvm --version`)
+- [ ] Node/npm available in PATH (`node --version`, `npm --version`)
+- [ ] Composer available in PATH (`composer --version`)
+- [ ] Starship prompt active (if terminal module installed)
+
 ### Clean Kubuntu VM
 
 - [ ] Fresh Kubuntu 24.04 LTS VM

@@ -19,10 +19,10 @@ doctor_check_system() {
         if [[ "$is_supported" == "true" ]]; then
             doctor_pass "OS: ${PRETTY_NAME:-$ID}"
         else
-            doctor_warn "OS: ${PRETTY_NAME:-$ID} (unsupported, Ubuntu-based recommended)"
+            doctor_fail "OS: ${PRETTY_NAME:-$ID} (unsupported, requires Ubuntu-based distribution)"
         fi
     else
-        doctor_warn "Cannot determine OS (/etc/os-release not found)"
+        doctor_fail "Cannot determine OS (/etc/os-release not found)"
     fi
 
     # Check architecture and validate support
@@ -33,7 +33,7 @@ doctor_check_system() {
             doctor_pass "Architecture: $arch"
             ;;
         *)
-            doctor_warn "Architecture: $arch (some modules require amd64)"
+            doctor_fail "Architecture: $arch (unsupported, requires x86_64/amd64)"
             ;;
     esac
 
