@@ -173,6 +173,12 @@ install_apt_package() {
 
     if package_installed "$package_name"; then
         log_info "$package_name is already installed. Skipping."
+
+        # Record package skipped
+        if declare -F metrics_record_package_skipped >/dev/null 2>&1; then
+            metrics_record_package_skipped
+        fi
+
         return 0
     fi
 
@@ -190,6 +196,11 @@ install_apt_package() {
     if ! package_installed "$package_name"; then
         log_error "$package_name installation verification failed"
         return 1
+    fi
+
+    # Record package installed
+    if declare -F metrics_record_package_installed >/dev/null 2>&1; then
+        metrics_record_package_installed
     fi
 
     log_success "$package_name installed."
@@ -248,7 +259,7 @@ download_file() {
 
 create_temp_dir() {
     local tmp_dir
-    tmp_dir="$(mktemp -d)"
+    tmp_dir="$(mktemp -d -t devforge.XXXXXXXX)"
 
     if [[ ! -d "$tmp_dir" ]]; then
         log_error "Failed to create temporary directory"
@@ -262,22 +273,61 @@ create_temp_dir() {
 cleanup_temp_dir() {
     local tmp_dir="$1"
 
-    # Safety checks
+    # Safety check: empty path
     if [[ -z "$tmp_dir" ]]; then
         log_warning "cleanup_temp_dir called with empty path"
         return 1
     fi
 
+    # Safety check: must be absolute path
+    if [[ "$tmp_dir" != /* ]]; then
+        log_warning "Refusing to delete relative path: $tmp_dir"
+        return 1
+    fi
+
+    # Safety check: dangerous literal paths
     if [[ "$tmp_dir" == "/" ]] || [[ "$tmp_dir" == "/tmp" ]] || [[ "$tmp_dir" == "$HOME" ]]; then
         log_warning "Refusing to delete dangerous path: $tmp_dir"
         return 1
     fi
 
+    # Safety check: must be under system temp directory
+    local system_tmp_dir
+    system_tmp_dir="${TMPDIR:-/tmp}"
+
+    # Canonicalize both paths if possible (use readlink -f if available, otherwise basic check)
+    local canonical_tmp_dir
+    local canonical_system_tmp
+
+    if command_exists readlink; then
+        canonical_tmp_dir="$(readlink -f "$tmp_dir" 2>/dev/null || echo "$tmp_dir")"
+        canonical_system_tmp="$(readlink -f "$system_tmp_dir" 2>/dev/null || echo "$system_tmp_dir")"
+    else
+        canonical_tmp_dir="$tmp_dir"
+        canonical_system_tmp="$system_tmp_dir"
+    fi
+
+    # Check if path is under system temp (handle trailing slashes)
+    canonical_system_tmp="${canonical_system_tmp%/}"
+    if [[ "$canonical_tmp_dir" != "$canonical_system_tmp"/* ]]; then
+        log_warning "Refusing to delete path outside temp directory: $tmp_dir"
+        return 1
+    fi
+
+    # Safety check: basename must start with devforge.
+    local basename
+    basename="$(basename "$tmp_dir")"
+    if [[ "$basename" != devforge.* ]]; then
+        log_warning "Refusing to delete path without devforge. prefix: $tmp_dir"
+        return 1
+    fi
+
+    # Directory doesn't exist - not an error, may have been cleaned already
     if [[ ! -d "$tmp_dir" ]]; then
-        # Not an error - directory may have already been cleaned
         return 0
     fi
 
+    # All safety checks passed, proceed with deletion
     if ! rm -rf "$tmp_dir"; then
         log_warning "Failed to clean up temporary directory: $tmp_dir"
         return 1
@@ -294,6 +344,20 @@ ensure_apt_repository() {
     local key_format="${5:-binary}"  # binary or dearmor
 
     local needs_update=false
+
+    # Validate key_format parameter
+    if [[ "$key_format" != "binary" ]] && [[ "$key_format" != "dearmor" ]]; then
+        log_error "Invalid key_format: $key_format (must be 'binary' or 'dearmor')"
+        return 1
+    fi
+
+    # If dearmor format, ensure gpg exists
+    if [[ "$key_format" == "dearmor" ]]; then
+        if ! command_exists gpg; then
+            log_error "gpg command not found (required for dearmor format)"
+            return 1
+        fi
+    fi
 
     # Ensure /etc/apt/keyrings exists
     if [[ ! -d /etc/apt/keyrings ]]; then
@@ -318,31 +382,38 @@ ensure_apt_repository() {
 
         local tmp_key="$tmp_dir/repo.key"
 
+        # Always use download_file first (no duplicate curl/wget logic)
+        if ! download_file "$key_url" "$tmp_key"; then
+            cleanup_temp_dir "$tmp_dir"
+            return 1
+        fi
+
+        # Verify downloaded key is non-empty
+        if [[ ! -s "$tmp_key" ]]; then
+            log_error "Downloaded key file is empty"
+            cleanup_temp_dir "$tmp_dir"
+            return 1
+        fi
+
+        # If dearmor format, process the key
         if [[ "$key_format" == "dearmor" ]]; then
-            # Download and dearmor in one step
-            if command_exists curl; then
-                if ! curl -fsSL "$key_url" | gpg --dearmor -o "$tmp_key"; then
-                    log_error "Failed to download and dearmor repository key"
-                    cleanup_temp_dir "$tmp_dir"
-                    return 1
-                fi
-            elif command_exists wget; then
-                if ! wget -qO- "$key_url" | gpg --dearmor -o "$tmp_key"; then
-                    log_error "Failed to download and dearmor repository key"
-                    cleanup_temp_dir "$tmp_dir"
-                    return 1
-                fi
-            else
-                log_error "Neither curl nor wget is available"
+            local tmp_dearmored="$tmp_dir/repo.key.dearmored"
+
+            if ! gpg --dearmor < "$tmp_key" > "$tmp_dearmored"; then
+                log_error "Failed to dearmor repository key"
                 cleanup_temp_dir "$tmp_dir"
                 return 1
             fi
-        else
-            # Binary format - direct download
-            if ! download_file "$key_url" "$tmp_key"; then
+
+            # Verify dearmored output is non-empty
+            if [[ ! -s "$tmp_dearmored" ]]; then
+                log_error "Dearmored key file is empty"
                 cleanup_temp_dir "$tmp_dir"
                 return 1
             fi
+
+            # Use dearmored version
+            tmp_key="$tmp_dearmored"
         fi
 
         # Install keyring with correct permissions
@@ -360,9 +431,9 @@ ensure_apt_repository() {
     if [[ ! -f "$sources_file" ]] || ! grep -qxF "$source_line" "$sources_file"; then
         log_info "Adding repository source..."
 
-        # Write atomically using temp file
+        # Write atomically using DevForge-specific temp file pattern
         local tmp_sources
-        tmp_sources="$(mktemp)"
+        tmp_sources="$(mktemp -t devforge.XXXXXXXX)"
 
         if ! echo "$source_line" > "$tmp_sources"; then
             log_error "Failed to write repository source"
@@ -394,13 +465,49 @@ install_deb_from_url() {
     local url="$3"
     local verify_command="$4"
 
+    # Validate all parameters are non-empty
+    if [[ -z "$package_name" ]]; then
+        log_error "install_deb_from_url: package_name is required"
+        return 1
+    fi
+    if [[ -z "$display_name" ]]; then
+        log_error "install_deb_from_url: display_name is required"
+        return 1
+    fi
+    if [[ -z "$url" ]]; then
+        log_error "install_deb_from_url: url is required"
+        return 1
+    fi
+    if [[ -z "$verify_command" ]]; then
+        log_error "install_deb_from_url: verify_command is required"
+        return 1
+    fi
+
     # Check if already installed
-    if package_installed "$package_name" || command_exists "$verify_command"; then
+    if package_installed "$package_name" && command_exists "$verify_command"; then
         log_info "$display_name is already installed. Skipping."
+
+        # Record application skipped (DEB installations count as applications)
+        if declare -F metrics_record_application_skipped >/dev/null 2>&1; then
+            metrics_record_application_skipped
+        fi
+
         return 0
     fi
 
     log_info "Installing $display_name..."
+
+    # Require dpkg-deb
+    if ! command_exists dpkg-deb; then
+        log_error "dpkg-deb command not found (required for .deb installation)"
+        return 1
+    fi
+
+    # Require apt-get
+    if ! command_exists apt-get; then
+        log_error "apt-get command not found (required for .deb installation)"
+        return 1
+    fi
 
     # Ensure downloader available
     if ! command_exists wget && ! command_exists curl; then
@@ -438,23 +545,27 @@ install_deb_from_url() {
         return 1
     fi
 
-    # Verify installation
-    local install_verified=false
+    # Cleanup before verification
+    cleanup_temp_dir "$tmp_dir"
 
-    if package_installed "$package_name"; then
-        install_verified=true
-    elif command_exists "$verify_command"; then
-        install_verified=true
-    fi
-
-    if [[ "$install_verified" != "true" ]]; then
-        log_error "$display_name installation verification failed"
-        cleanup_temp_dir "$tmp_dir"
+    # Verify installation - require BOTH package AND command
+    if ! package_installed "$package_name"; then
+        log_error "$display_name package verification failed"
         return 1
     fi
 
-    cleanup_temp_dir "$tmp_dir"
+    if ! command_exists "$verify_command"; then
+        log_error "$display_name command verification failed"
+        return 1
+    fi
+
     log_success "$display_name installed"
+
+    # Record application installed (DEB installations count as applications)
+    if declare -F metrics_record_application_installed >/dev/null 2>&1; then
+        metrics_record_application_installed
+    fi
+
     return 0
 }
 
@@ -464,6 +575,7 @@ verify_command() {
     shift 2
     # Remaining args are the version command
 
+    # Check if command exists
     if ! command_exists "$command_name"; then
         log_error "$display_name verification failed: command not found"
         return 1
@@ -472,10 +584,16 @@ verify_command() {
     # If version args provided, try to get version
     if [[ $# -gt 0 ]]; then
         local version_output
-        if version_output=$("$@" 2>/dev/null | head -n1); then
+        local version_exit_code
+
+        # Capture output and exit code separately (no eval needed)
+        version_output=$("$@" 2>/dev/null | head -n1)
+        version_exit_code=$?
+
+        if [[ $version_exit_code -eq 0 ]] && [[ -n "$version_output" ]]; then
             log_success "$display_name verified: $version_output"
         else
-            log_success "$display_name verified (version unavailable)"
+            log_warning "$display_name verified (version command failed)"
         fi
     else
         log_success "$display_name verified"

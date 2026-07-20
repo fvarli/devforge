@@ -52,6 +52,12 @@ add_line_to_file_idempotent() {
 install_starship() {
     if command_exists starship; then
         log_info "Starship is already installed. Skipping."
+
+        # Record application skipped
+        if declare -F metrics_record_application_skipped >/dev/null 2>&1; then
+            metrics_record_application_skipped
+        fi
+
         return 0
     fi
 
@@ -75,6 +81,12 @@ install_starship() {
 
     cleanup_temp_dir "$tmp_dir"
     log_success "Starship installed"
+
+    # Record application installed
+    if declare -F metrics_record_application_installed >/dev/null 2>&1; then
+        metrics_record_application_installed
+    fi
+
     return 0
 }
 
@@ -149,14 +161,32 @@ install_eza() {
 install_zoxide() {
     if command_exists_for_user zoxide; then
         log_info "zoxide is already installed. Skipping."
+
+        # Record application skipped (zoxide counts as application even when via APT)
+        if declare -F metrics_record_application_skipped >/dev/null 2>&1; then
+            metrics_record_application_skipped
+        fi
+
         return 0
     fi
 
     log_info "Installing zoxide..."
 
     # Try APT first - don't suppress errors
+    # Note: If APT install succeeds, it will increment package counter
+    # but we need to count zoxide as an application, so we'll adjust the counters
     if install_apt_package zoxide; then
         log_success "zoxide installed from APT"
+
+        # Adjust metrics: decrement package counter, increment application counter
+        # zoxide is treated as an application for metrics purposes
+        if declare -F metrics_increment >/dev/null 2>&1; then
+            if [[ "${METRICS_PACKAGES_INSTALLED:-0}" -gt 0 ]]; then
+                ((METRICS_PACKAGES_INSTALLED--))
+            fi
+            metrics_record_application_installed
+        fi
+
         return 0
     fi
 
@@ -192,6 +222,12 @@ install_zoxide() {
 
     cleanup_temp_dir "$tmp_dir"
     log_success "zoxide installed"
+
+    # Record application installed
+    if declare -F metrics_record_application_installed >/dev/null 2>&1; then
+        metrics_record_application_installed
+    fi
+
     return 0
 }
 

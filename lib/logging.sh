@@ -26,10 +26,20 @@ log_success() {
 
 log_warning() {
     printf "${COLOR_YELLOW}⚠${COLOR_RESET} %s\n" "$*"
+
+    # Increment warning counter if metrics available (avoid recursion)
+    if declare -F metrics_increment >/dev/null 2>&1; then
+        metrics_increment warnings
+    fi
 }
 
 log_error() {
     printf "${COLOR_RED}✗${COLOR_RESET} %s\n" "$*" >&2
+
+    # Increment error counter if metrics available (avoid recursion)
+    if declare -F metrics_increment >/dev/null 2>&1; then
+        metrics_increment errors
+    fi
 }
 
 log_step() {

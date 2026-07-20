@@ -6,15 +6,27 @@ ensure_flatpak() {
         return 1
     fi
 
+    # Verify flatpak command exists after installation
+    if ! command_exists flatpak; then
+        log_error "flatpak package installed but command not found"
+        return 1
+    fi
+
     return 0
 }
 
 ensure_flathub_remote() {
-    # Check if Flathub remote already exists
-    if flatpak remotes --system 2>/dev/null | grep -q "^flathub"; then
-        log_info "Flathub remote already configured. Skipping."
-        return 0
-    fi
+    # Check if Flathub remote already exists (exact match, not grep)
+    local remotes
+    remotes=$(flatpak remotes --system 2>/dev/null | awk '{print $1}')
+
+    local remote
+    for remote in $remotes; do
+        if [[ "$remote" == "flathub" ]]; then
+            log_info "Flathub remote already configured. Skipping."
+            return 0
+        fi
+    done
 
     log_info "Adding Flathub remote..."
     if ! flatpak remote-add --system --if-not-exists flathub \
@@ -40,6 +52,12 @@ install_flatpak_app() {
     # Check if already installed
     if flatpak_app_installed "$app_id"; then
         log_info "$app_name is already installed. Skipping."
+
+        # Record application skipped
+        if declare -F metrics_record_application_skipped >/dev/null 2>&1; then
+            metrics_record_application_skipped
+        fi
+
         return 0
     fi
 
@@ -56,6 +74,12 @@ install_flatpak_app() {
     fi
 
     log_success "$app_name installed"
+
+    # Record application installed
+    if declare -F metrics_record_application_installed >/dev/null 2>&1; then
+        metrics_record_application_installed
+    fi
+
     return 0
 }
 

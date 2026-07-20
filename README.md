@@ -14,6 +14,40 @@ The initial foundation includes:
 - Modular installer architecture
 - Idempotent APT package installation
 - Error handling
+- Module execution timing
+- Installation metrics and counters
+- Comprehensive summary reporting
+- Non-zero exit codes on failure
+
+## Installation Metrics
+
+DevForge tracks installation progress and provides detailed reports:
+
+- **Module timing**: Execution time from start to completion
+- **Operation counters**: Packages (APT) vs applications (DEB, Flatpak, scripts)
+- **Status tracking**: Warnings and errors encountered
+- **Total elapsed time**: Overall installation duration
+
+### Summary Report
+
+```
+Modules:
+✓ system (12s)
+✓ terminal (1m 34s)
+
+Operations:
+  Packages: 42 installed, 8 skipped (50 total)
+  Applications: 5 installed, 2 skipped (7 total)
+
+Total time: 2m 39s
+```
+
+Time formats: `42s`, `3m 12s`, `1h 4m 9s`
+
+### Exit Codes
+
+- `0`: All modules completed successfully
+- `1`: One or more modules failed
 
 ## Available modules
 

@@ -23,6 +23,9 @@ source "$DEVFORGE_ROOT/lib/cli.sh"
 # shellcheck source=lib/flatpak.sh
 source "$DEVFORGE_ROOT/lib/flatpak.sh"
 
+# shellcheck source=lib/metrics.sh
+source "$DEVFORGE_ROOT/lib/metrics.sh"
+
 on_error() {
     local exit_code=$?
     local line_number="${1:-unknown}"
@@ -93,11 +96,32 @@ main() {
     print_selected_modules
     confirm_installation
 
-    run_selected_modules
-    print_installation_summary
+    # Start metrics tracking
+    if declare -F metrics_start >/dev/null 2>&1; then
+        metrics_start
+    fi
 
-    printf "\n"
-    log_success "DevForge completed successfully."
+    run_selected_modules
+
+    # Finish metrics tracking
+    if declare -F metrics_finish >/dev/null 2>&1; then
+        metrics_finish
+    fi
+
+    # Capture summary exit code
+    local summary_exit_code=0
+    if ! print_installation_summary; then
+        summary_exit_code=1
+    fi
+
+    # Only print success if summary succeeded
+    if [[ $summary_exit_code -eq 0 ]]; then
+        printf "\n"
+        log_success "DevForge completed successfully."
+    fi
+
+    # Exit with proper code
+    exit $summary_exit_code
 }
 
 main "$@"
