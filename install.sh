@@ -29,6 +29,8 @@ source "$DEVFORGE_ROOT/lib/metrics.sh"
 # shellcheck source=lib/doctor.sh
 source "$DEVFORGE_ROOT/lib/doctor.sh"
 
+# ShellCheck cannot detect invocation through the ERR trap
+# shellcheck disable=SC2317
 on_error() {
     local exit_code=$?
     local line_number="${1:-unknown}"

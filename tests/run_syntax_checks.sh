@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # Syntax validation for all DevForge shell scripts
-# Runs bash -n and shellcheck (if available) on all .sh files
+# Runs bash -n per file and shellcheck once for all files with -x flag
 
 set -Eeuo pipefail
 
@@ -44,11 +44,8 @@ log_step() {
 }
 
 # Counters
-TOTAL_FILES=0
 BASH_SYNTAX_PASSED=0
 BASH_SYNTAX_FAILED=0
-SHELLCHECK_PASSED=0
-SHELLCHECK_FAILED=0
 SHELLCHECK_AVAILABLE=false
 
 # Check if shellcheck is available
@@ -59,15 +56,10 @@ else
     log_warning "ShellCheck not available - skipping ShellCheck validation"
 fi
 
-# Find all .sh files
-get_shell_scripts() {
-    find "$DEVFORGE_ROOT" -type f -name "*.sh" | sort
-}
-
-# Run bash -n syntax check
+# Run bash -n syntax check on a single file
 check_bash_syntax() {
     local file="$1"
-    local relative_path="${file#$DEVFORGE_ROOT/}"
+    local relative_path="${file#"$DEVFORGE_ROOT"/}"
 
     if bash -n "$file" 2>/dev/null; then
         log_success "bash -n: $relative_path"
@@ -81,70 +73,66 @@ check_bash_syntax() {
     fi
 }
 
-# Run shellcheck
-check_shellcheck() {
-    local file="$1"
-    local relative_path="${file#$DEVFORGE_ROOT/}"
-
-    if ! $SHELLCHECK_AVAILABLE; then
-        return 0
-    fi
-
-    if shellcheck "$file" 2>/dev/null; then
-        log_success "shellcheck: $relative_path"
-        SHELLCHECK_PASSED=$((SHELLCHECK_PASSED + 1))
-        return 0
-    else
-        log_error "shellcheck: $relative_path"
-        shellcheck "$file" 2>&1 | sed 's/^/    /' >&2
-        SHELLCHECK_FAILED=$((SHELLCHECK_FAILED + 1))
-        return 1
-    fi
-}
-
 # Main validation
 main() {
     log_step "DevForge Syntax Validation"
 
-    local files
-    files=$(get_shell_scripts)
+    # Build array of shell scripts (deterministic order)
+    local -a shell_files=()
+    shell_files+=("$DEVFORGE_ROOT/install.sh")
 
-    if [[ -z "$files" ]]; then
-        log_error "No shell scripts found"
-        exit 1
-    fi
+    local file
+    for file in "$DEVFORGE_ROOT"/lib/*.sh; do
+        [[ -f "$file" ]] && shell_files+=("$file")
+    done
+    for file in "$DEVFORGE_ROOT"/modules/*.sh; do
+        [[ -f "$file" ]] && shell_files+=("$file")
+    done
+    for file in "$DEVFORGE_ROOT"/doctor/*.sh; do
+        [[ -f "$file" ]] && shell_files+=("$file")
+    done
+    for file in "$DEVFORGE_ROOT"/tests/*.sh; do
+        [[ -f "$file" ]] && shell_files+=("$file")
+    done
 
-    # Count total files
-    TOTAL_FILES=$(echo "$files" | wc -l)
-    log_info "Found $TOTAL_FILES shell script(s)"
+    local total_files="${#shell_files[@]}"
+    log_info "Found $total_files shell script(s)"
 
-    # Run bash -n checks
+    # Run bash -n checks per file
     log_step "Running bash -n syntax checks"
-    while IFS= read -r file; do
-        check_bash_syntax "$file" || true
-    done <<< "$files"
+    local bash_failed=false
+    for file in "${shell_files[@]}"; do
+        if ! check_bash_syntax "$file"; then
+            bash_failed=true
+        fi
+    done
 
-    # Run shellcheck if available
+    # Run shellcheck once for all files with -x flag
+    local shellcheck_failed=false
     if $SHELLCHECK_AVAILABLE; then
-        log_step "Running ShellCheck"
-        while IFS= read -r file; do
-            check_shellcheck "$file" || true
-        done <<< "$files"
+        log_step "Running ShellCheck (consolidated with -x flag)"
+        if shellcheck -x "${shell_files[@]}"; then
+            log_success "ShellCheck passed for all $total_files files"
+        else
+            log_error "ShellCheck failed"
+            shellcheck_failed=true
+        fi
     fi
 
     # Print summary
     printf "\n"
     log_step "Syntax Validation Summary"
     printf "\n"
-    printf "Total files:         %d\n" "$TOTAL_FILES"
-    printf "\n"
+    printf "Total files:         %d\n" "$total_files"
     printf "bash -n passed:      %d\n" "$BASH_SYNTAX_PASSED"
     printf "bash -n failed:      %d\n" "$BASH_SYNTAX_FAILED"
 
     if $SHELLCHECK_AVAILABLE; then
-        printf "\n"
-        printf "shellcheck passed:   %d\n" "$SHELLCHECK_PASSED"
-        printf "shellcheck failed:   %d\n" "$SHELLCHECK_FAILED"
+        if $shellcheck_failed; then
+            printf "shellcheck:          FAILED\n"
+        else
+            printf "shellcheck:          PASSED\n"
+        fi
     fi
 
     printf "\n"
@@ -152,13 +140,13 @@ main() {
     # Determine exit code
     local exit_code=0
 
-    if [[ $BASH_SYNTAX_FAILED -gt 0 ]]; then
+    if [[ "$bash_failed" == "true" ]]; then
         log_error "bash -n validation failed for $BASH_SYNTAX_FAILED file(s)"
         exit_code=1
     fi
 
-    if $SHELLCHECK_AVAILABLE && [[ $SHELLCHECK_FAILED -gt 0 ]]; then
-        log_error "shellcheck validation failed for $SHELLCHECK_FAILED file(s)"
+    if $SHELLCHECK_AVAILABLE && [[ "$shellcheck_failed" == "true" ]]; then
+        log_error "ShellCheck validation failed"
         exit_code=1
     fi
 

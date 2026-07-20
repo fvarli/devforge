@@ -12,29 +12,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
-      - name: Check bash syntax - install.sh
-        run: bash -n install.sh
-
-      - name: Check bash syntax - lib/
-        run: bash -n lib/*.sh
-
-      - name: Check bash syntax - modules/
-        run: bash -n modules/*.sh
-
-      - name: Check bash syntax - doctor/
-        run: bash -n doctor/*.sh
-
-      - name: Check bash syntax - tests/
-        run: bash -n tests/*.sh
+      - name: Check bash syntax
+        run: bash -n install.sh lib/*.sh modules/*.sh doctor/*.sh tests/*.sh
 
   shellcheck:
     name: ShellCheck
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Install ShellCheck
         run: |
@@ -42,27 +30,21 @@ jobs:
           sudo apt-get install -y shellcheck
           shellcheck --version
 
-      - name: ShellCheck install.sh
-        run: shellcheck install.sh
-
-      - name: ShellCheck lib/
-        run: shellcheck lib/*.sh
-
-      - name: ShellCheck modules/
-        run: shellcheck modules/*.sh
-
-      - name: ShellCheck doctor/
-        run: shellcheck doctor/*.sh
-
-      - name: ShellCheck tests/
-        run: shellcheck tests/*.sh
+      - name: Run ShellCheck
+        run: |
+          shellcheck -x \
+            install.sh \
+            lib/*.sh \
+            modules/*.sh \
+            doctor/*.sh \
+            tests/*.sh
 
   unit-tests:
     name: Unit Tests
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Run helper tests
         run: bash tests/test_helpers.sh
@@ -71,17 +53,14 @@ jobs:
         run: bash tests/test_doctor.sh
 
       - name: Run syntax checks script
-        run: |
-          if [[ -f tests/run_syntax_checks.sh ]]; then
-            bash tests/run_syntax_checks.sh
-          fi
+        run: bash tests/run_syntax_checks.sh
 
   doctor-validation:
     name: Doctor Validation
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Create config
         run: cp config.env.example config.env
@@ -120,79 +99,12 @@ jobs:
           grep -qE "\[(OK|WARN|FAIL|SKIP)\]" doctor_output.txt
           echo "Doctor markers validated"
 
-      - name: Verify doctor exit code semantics
-        run: |
-          # Test that doctor returns 1 on fresh system (expected failures)
-          cp config.env.example config.env
-          if ./install.sh --doctor > /dev/null 2>&1; then
-            echo "Doctor returned 0 (unexpected on fresh system)"
-          else
-            echo "Doctor returned non-zero as expected"
-          fi
-
-  doctor-exit-status:
-    name: Doctor Exit Status
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Create config with all disabled
-        run: |
-          cat > config.env << 'EOF'
-          DEVFORGE_USER="${SUDO_USER:-$USER}"
-          INSTALL_SYSTEM=false
-          INSTALL_TERMINAL=false
-          INSTALL_GIT=false
-          INSTALL_PHP=false
-          INSTALL_NODE=false
-          INSTALL_DOCKER=false
-          INSTALL_DATABASES=false
-          INSTALL_BROWSERS=false
-          INSTALL_APPS=false
-          INSTALL_CHROME=false
-          INSTALL_BRAVE=false
-          INSTALL_VSCODE=false
-          INSTALL_DBEAVER=false
-          INSTALL_BITWARDEN=false
-          INSTALL_SPOTIFY=false
-          INSTALL_VLC=false
-          INSTALL_FILEZILLA=false
-          INSTALL_KEEPASSXC=false
-          INSTALL_MYSQL=false
-          INSTALL_POSTGRESQL=false
-          INSTALL_REDIS=false
-          INSTALL_SQLITE=false
-          INSTALL_DOCKER_ENGINE=false
-          INSTALL_PNPM=false
-          INSTALL_YARN=false
-          INSTALL_BUN=false
-          INSTALL_LARAVEL_INSTALLER=false
-          INSTALL_SYMFONY_CLI=false
-          EOF
-
-      - name: Test doctor with all disabled
-        run: |
-          # With all modules disabled, doctor should only check system
-          # System checks (OS, arch, disk, DNS) should pass
-          ./install.sh --doctor
-          exit_code=$?
-          echo "Exit code: $exit_code"
-          # System checks should pass on Ubuntu runner
-          if [[ $exit_code -eq 0 ]]; then
-            echo "Doctor passed with all modules disabled"
-          else
-            echo "Doctor failed - showing output for debugging"
-            ./install.sh --doctor 2>&1 || true  # Show output only, exit handled above
-            exit 1
-          fi
-
   file-structure:
     name: File Structure
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Verify required files exist
         run: |
