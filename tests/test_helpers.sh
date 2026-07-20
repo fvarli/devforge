@@ -268,222 +268,49 @@ test_temp_dir_lifecycle() {
     assert_command_succeeds "cleanup_temp_dir succeeds on non-existent path" cleanup_temp_dir "$tmp_dir"
 }
 
-# Test module-loop failure aggregation with mock modules
-test_module_loop_failure_aggregation() {
-    log_step "Testing module loop failure aggregation"
+# Test run_selected_modules behavior with real DevForge functions
+test_run_selected_modules_behavior() {
+    log_step "Testing run_selected_modules behavior"
 
-    # Source modules.sh for run_selected_modules
+    # Source modules.sh for the actual DevForge function
     source "$DEVFORGE_ROOT/lib/modules.sh"
 
-    # Reset module tracking arrays
+    # Test 1: Empty selection returns success
+    SELECTED_MODULES=()
     COMPLETED_MODULES=()
     FAILED_MODULES=()
 
-    # Create mock module functions
-    install_mock_success() {
-        return 0
-    }
-
-    install_mock_failure() {
-        return 1
-    }
-
-    # Create temporary mock module files
-    local mock_dir
-    mock_dir=$(create_temp_dir)
-    mkdir -p "$mock_dir"
-
-    # Create mock module that succeeds
-    cat > "$mock_dir/mock_success.sh" << 'MOCK_EOF'
-install_mock_success() {
-    return 0
-}
-MOCK_EOF
-
-    # Create mock module that fails
-    cat > "$mock_dir/mock_failure.sh" << 'MOCK_EOF'
-install_mock_failure() {
-    return 1
-}
-MOCK_EOF
-
-    # Temporarily override DEVFORGE_ROOT/modules path
-    local original_root="$DEVFORGE_ROOT"
-
-    # Test: run_module with success
-    # We'll test the core logic pattern directly
     increment_tests_run
-    local test_status=0
-    if install_mock_success; then
+    if run_selected_modules; then
         increment_tests_passed
-        log_success "Mock success module returns 0"
+        log_success "Empty module selection returns success"
     else
         increment_tests_failed
-        log_error "Mock success module returns 0"
+        log_error "Empty module selection returns success"
     fi
 
-    # Test: run_module with failure
-    increment_tests_run
-    if install_mock_failure; then
-        increment_tests_failed
-        log_error "Mock failure module returns non-zero"
-    else
-        increment_tests_passed
-        log_success "Mock failure module returns non-zero"
-    fi
-
-    # Test: failure aggregation pattern (simulates run_selected_modules)
-    increment_tests_run
-    local any_failed=false
-
-    # Run mock success - should not set any_failed
-    if ! install_mock_success; then
-        any_failed=true
-    fi
-
-    # Run mock failure - should set any_failed
-    if ! install_mock_failure; then
-        any_failed=true
-    fi
-
-    if [[ "$any_failed" == "true" ]]; then
-        increment_tests_passed
-        log_success "Failure aggregation detects failed module"
-    else
-        increment_tests_failed
-        log_error "Failure aggregation detects failed module"
-    fi
-
-    # Cleanup
-    cleanup_temp_dir "$mock_dir"
-}
-
-# Test exit flow patterns under set -Eeuo pipefail
-test_exit_flow_patterns() {
-    log_step "Testing exit flow patterns"
-
-    # Test: conditional context prevents ERR trap on expected return 1
-    # This simulates the install.sh pattern: if main "$@"; then ... else ... fi
-
-    mock_main_success() {
-        return 0
-    }
-
-    mock_main_failure() {
-        return 1
-    }
-
-    # Test success case
-    increment_tests_run
-    local exit_code=0
-    if mock_main_success; then
-        exit_code=0
-    else
-        exit_code=$?
-    fi
-
-    if [[ $exit_code -eq 0 ]]; then
-        increment_tests_passed
-        log_success "Conditional context: success returns 0"
-    else
-        increment_tests_failed
-        log_error "Conditional context: success returns 0"
-    fi
-
-    # Test failure case - this must not trigger ERR trap
-    increment_tests_run
-    if mock_main_failure; then
-        exit_code=0
-    else
-        exit_code=$?
-    fi
-
-    if [[ $exit_code -eq 1 ]]; then
-        increment_tests_passed
-        log_success "Conditional context: failure returns 1 without ERR trap"
-    else
-        increment_tests_failed
-        log_error "Conditional context: failure returns 1 without ERR trap"
-        log_error "  Actual exit code: $exit_code"
-    fi
-
-    # Test: exit code preservation through conditional
-    increment_tests_run
-    mock_main_specific_code() {
-        return 42
-    }
-
-    if mock_main_specific_code; then
-        exit_code=0
-    else
-        exit_code=$?
-    fi
-
-    if [[ $exit_code -eq 42 ]]; then
-        increment_tests_passed
-        log_success "Exit code 42 preserved through conditional"
-    else
-        increment_tests_failed
-        log_error "Exit code 42 preserved through conditional"
-        log_error "  Actual: $exit_code"
-    fi
-}
-
-# Test no duplicate ERR diagnostic for expected module failure
-test_no_duplicate_err_diagnostic() {
-    log_step "Testing no duplicate ERR diagnostic"
-
-    # This test verifies the pattern used in install.sh
-    # When a module fails expectedly, the ERR trap should NOT fire
-
-    # Simulate the run_selected_modules pattern
-    local err_trap_fired=false
-
-    # Set up a test ERR trap
-    trap_test_handler() {
-        err_trap_fired=true
-    }
-
-    # Save original trap and set test trap
-    local original_trap
-    original_trap=$(trap -p ERR)
-    trap 'trap_test_handler' ERR
-
-    # Run a command that returns non-zero in conditional context
-    # This should NOT trigger the ERR trap
-    mock_failing_module() {
-        return 1
-    }
-
-    local module_status=0
-    if ! mock_failing_module; then
-        module_status=1
-    fi
+    # Test 2: Non-existent module is skipped (not failed)
+    SELECTED_MODULES=("nonexistent_module_xyz")
+    COMPLETED_MODULES=()
+    FAILED_MODULES=()
 
     increment_tests_run
-    if [[ "$err_trap_fired" == "false" ]]; then
+    if run_selected_modules; then
         increment_tests_passed
-        log_success "Conditional context does not trigger ERR trap"
+        log_success "Non-existent module skipped, returns success"
     else
         increment_tests_failed
-        log_error "Conditional context does not trigger ERR trap"
-        log_error "  ERR trap was fired unexpectedly"
+        log_error "Non-existent module skipped, returns success"
     fi
 
-    # Verify module_status was captured correctly
+    # Test 3: FAILED_MODULES array tracks failures correctly
     increment_tests_run
-    if [[ $module_status -eq 1 ]]; then
+    if [[ "${#FAILED_MODULES[@]}" -eq 0 ]]; then
         increment_tests_passed
-        log_success "Module failure status captured correctly"
+        log_success "Skipped module not added to FAILED_MODULES"
     else
         increment_tests_failed
-        log_error "Module failure status captured correctly"
-    fi
-
-    # Restore original trap (or clear it)
-    trap - ERR
-    if [[ -n "$original_trap" ]]; then
-        eval "$original_trap"
+        log_error "Skipped module not added to FAILED_MODULES"
     fi
 }
 
@@ -515,9 +342,7 @@ main() {
     test_summary_does_not_change_counters || true
     test_cleanup_temp_dir_rejects_dangerous_paths || true
     test_temp_dir_lifecycle || true
-    test_module_loop_failure_aggregation || true
-    test_exit_flow_patterns || true
-    test_no_duplicate_err_diagnostic || true
+    test_run_selected_modules_behavior || true
 
     print_test_summary
 }
