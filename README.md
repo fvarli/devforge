@@ -101,6 +101,13 @@ Running diagnostic checks...
 
 Doctor does NOT require root privileges.
 
+## Documentation
+
+- [Quick Start Guide](docs/QUICK_START.md) - Get started in 5 minutes
+- [Software Matrix](docs/SOFTWARE_MATRIX.md) - Complete package list by module
+- [Doctor Reporting](docs/DOCTOR_REPORTING.md) - Health monitoring and diagnostics
+- [VM Testing Guide](docs/VM_TESTING.md) - Release validation procedures
+
 ## Configuration
 
 Copy the example configuration:

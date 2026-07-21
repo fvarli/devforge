@@ -94,6 +94,9 @@ main() {
     for file in "$DEVFORGE_ROOT"/tests/*.sh; do
         [[ -f "$file" ]] && shell_files+=("$file")
     done
+    for file in "$DEVFORGE_ROOT"/scripts/*.sh; do
+        [[ -f "$file" ]] && shell_files+=("$file")
+    done
 
     local total_files="${#shell_files[@]}"
     log_info "Found $total_files shell script(s)"

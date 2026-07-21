@@ -9,6 +9,7 @@ logs/*.log
 # Generated report files
 *-diff.txt
 doctor_output.txt
+reports/
 
 # Local utility scripts
 git-diff-export.sh

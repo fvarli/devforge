@@ -1,6 +1,15 @@
 #!/usr/bin/env bash
 
-if [[ -t 1 ]]; then
+# NO_COLOR standard: https://no-color.org/
+# If NO_COLOR is set (to any value), disable colors regardless of TTY
+if [[ -n "${NO_COLOR:-}" ]]; then
+    COLOR_RESET=''
+    COLOR_RED=''
+    COLOR_GREEN=''
+    COLOR_YELLOW=''
+    COLOR_BLUE=''
+    COLOR_CYAN=''
+elif [[ -t 1 ]]; then
     COLOR_RESET='\033[0m'
     COLOR_RED='\033[0;31m'
     COLOR_GREEN='\033[0;32m'
