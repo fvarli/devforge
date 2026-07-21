@@ -64,6 +64,8 @@ run_with_nvm() {
 
     # Use positional parameters safely: bash -c 'script' _ args...
     # $0 is set to '_', $1 is nvm_dir, $2... are the actual arguments
+    # Positional parameters are intentionally expanded by the child Bash process.
+    # shellcheck disable=SC2016
     run_as_target_user bash -c '
         export NVM_DIR="$1"
         shift

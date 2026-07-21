@@ -53,9 +53,7 @@ install_gh_cli() {
 }
 
 setup_ssh_directory() {
-    local target_user
     local target_home
-    target_user="$(get_target_user)"
     target_home="$(get_target_home)"
 
     local ssh_dir="$target_home/.ssh"
