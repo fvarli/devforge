@@ -103,10 +103,18 @@ Doctor does NOT require root privileges.
 
 ## Documentation
 
+### User Guides
 - [Quick Start Guide](docs/QUICK_START.md) - Get started in 5 minutes
 - [Software Matrix](docs/SOFTWARE_MATRIX.md) - Complete package list by module
 - [Doctor Reporting](docs/DOCTOR_REPORTING.md) - Health monitoring and diagnostics
 - [VM Testing Guide](docs/VM_TESTING.md) - Release validation procedures
+
+### Project Documentation
+- [Architecture](ARCHITECTURE.md) - System design and module structure
+- [Contributing](CONTRIBUTING.md) - Development guidelines
+- [Release Process](RELEASE.md) - Release workflow
+- [Project Status](PROJECT_STATUS.md) - Current status snapshot
+- [AI Context](CLAUDE.md) - Context for AI assistants
 
 ## Configuration
 
