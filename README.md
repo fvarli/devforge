@@ -415,6 +415,29 @@ sudo dpkg --configure -a
 
 Note: Some packages may not be available in older repositories.
 
+## Developer Utilities
+
+### Git Diff Report
+
+Generate a comprehensive Git diff report for code review or documentation:
+
+```bash
+./scripts/git-diff-export.sh
+```
+
+Creates `git-diff.txt` with:
+- Repository metadata (name, branch, commit)
+- Git status
+- Unstaged diff
+- Staged diff
+- Diff statistics
+
+Custom output file:
+
+```bash
+./scripts/git-diff-export.sh my-changes.txt
+```
+
 ## Development
 
 ### Running Tests
