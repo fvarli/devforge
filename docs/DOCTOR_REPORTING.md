@@ -20,7 +20,13 @@ The doctor command performs read-only diagnostic checks on installed components.
 ./scripts/generate-doctor-report.sh
 ```
 
-Creates a timestamped report in `reports/doctor-report-YYYYMMDD-HHMMSS.txt`.
+Creates a timestamped report in `reports/devforge-doctor-YYYYMMDD-HHMMSS.txt`.
+
+### Custom Output File
+
+```bash
+./scripts/generate-doctor-report.sh reports/my-machine.txt
+```
 
 ### CI/Automation Usage
 
@@ -29,20 +35,6 @@ NO_COLOR=1 ./install.sh --doctor
 ```
 
 The `NO_COLOR` environment variable disables ANSI color codes for clean log output.
-
-### Quiet Mode (Report Only)
-
-```bash
-./scripts/generate-doctor-report.sh --quiet
-```
-
-Suppresses console output; only writes to file.
-
-### Custom Output Directory
-
-```bash
-./scripts/generate-doctor-report.sh --output-dir /path/to/reports
-```
 
 ---
 
@@ -90,7 +82,13 @@ Generated reports include:
    - Generation timestamp
    - Hostname
    - User running the check
+   - Distribution (OS name)
+   - Architecture (x86_64, etc.)
+   - Kernel version
    - DevForge version
+   - Git commit hash
+   - Git branch
+   - Working tree state (clean or modified count)
 
 2. **Section Checks**
    - System
@@ -108,6 +106,62 @@ Generated reports include:
    - Passed count
    - Warnings count
    - Failed count
+
+4. **Footer**
+   - Doctor exit code
+
+---
+
+## Example Report
+
+```
+========================================
+DevForge Doctor Report
+========================================
+
+Generated:    2024-01-15T14:30:00+00:00
+Hostname:     dev-workstation
+User:         developer
+Distribution: Ubuntu 24.04.1 LTS
+Architecture: x86_64
+Kernel:       6.5.0-15-generic
+
+DevForge:     v0.9.0
+Git commit:   a1b2c3d
+Git branch:   main
+Working tree: clean
+
+----------------------------------------
+
+DevForge Doctor
+Running diagnostic checks...
+
+==> System
+[OK] OS: Ubuntu 24.04.1 LTS
+[OK] Architecture: x86_64
+[OK] Disk space: 45GB free
+
+==> Terminal
+[OK] zsh: zsh 5.9
+[OK] fzf: 0.48.0
+[FAIL] tmux: not found
+
+==> Git
+[OK] git: git version 2.43.0
+[OK] git-lfs: git-lfs/3.4.1
+[OK] gh: gh version 2.40.1
+
+==> Summary
+  Total checks: 45
+  Passed: 42
+  Warnings: 1
+  Failed: 2
+  Health Score: 93%
+
+----------------------------------------
+Doctor exit code: 1
+========================================
+```
 
 ---
 
@@ -175,49 +229,6 @@ Generated reports include:
 
 ---
 
-## Example Output
-
-```
-DevForge Doctor
-Running diagnostic checks...
-
-==> System
-[OK] OS: Ubuntu 24.04.1 LTS
-[OK] Architecture: x86_64
-[OK] Disk space: 45GB free
-[OK] curl: curl 8.5.0
-
-==> Terminal
-[OK] zsh: zsh 5.9
-[OK] fzf: 0.48.0
-[FAIL] tmux: not found
-
-==> Git
-[OK] git: git version 2.43.0
-[OK] git-lfs: git-lfs/3.4.1
-[OK] gh: gh version 2.40.1
-[OK] SSH directory: /home/user/.ssh (700)
-
-==> PHP
-[OK] PHP 8.4: 8.4.2
-[OK] Composer: 2.7.1
-[OK] Laravel Installer: 5.7.2
-
-==> Node
-[OK] nvm: 0.39.7
-[OK] node: v20.11.0
-[OK] npm: 10.2.4
-
-==> Summary
-  Total checks: 45
-  Passed: 42
-  Warnings: 1
-  Failed: 2
-  Health Score: 93%
-```
-
----
-
 ## Troubleshooting
 
 ### Re-run a Failed Module
@@ -269,7 +280,7 @@ systemctl status redis
 To compare two doctor reports:
 
 ```bash
-diff reports/doctor-report-20240101-120000.txt reports/doctor-report-20240115-120000.txt
+diff reports/devforge-doctor-20240101-120000.txt reports/devforge-doctor-20240115-120000.txt
 ```
 
 This helps track changes in your development environment over time.
